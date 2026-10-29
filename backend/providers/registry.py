@@ -1,5 +1,6 @@
 """数据源注册表。"""
 from backend.providers.base import ProviderCapability, SearchProvider
+from backend.providers.discovery_provider import SearxngDiscoveryProvider
 from backend.providers.sample_provider import SampleProvider
 
 
@@ -52,17 +53,30 @@ class JobBoardPublicProvider(SearchProvider):
     )
 
 
-_ALL = [SampleProvider(), UserImportProvider(), OfficialSiteProvider(),
-        GovPublicProvider(), SearchEngineProvider(), JobBoardPublicProvider()]
+_ALL = [SearxngDiscoveryProvider(), SampleProvider(), UserImportProvider(),
+        OfficialSiteProvider(), GovPublicProvider(), SearchEngineProvider(),
+        JobBoardPublicProvider()]
 
 REGISTRY = {p.capability.name: p for p in _ALL}
 
+# 健康探测缓存（联网探测有网络开销，离线时超时更久；缓存 30 秒）
+_health_cache: dict[str, tuple[float, dict]] = {}
+_HEALTH_TTL = 30.0
+
 
 def list_providers() -> list[dict]:
-    return [
-        {
-            **vars(p.capability),
-            "health": p.health_check(),
-        }
-        for p in _ALL
-    ]
+    import time as _time
+    out = []
+    now = _time.monotonic()
+    for p in _ALL:
+        cached = _health_cache.get(p.capability.name)
+        if cached and now - cached[0] < _HEALTH_TTL:
+            health = cached[1]
+        else:
+            try:
+                health = p.health_check()
+            except Exception as exc:  # 探测失败不阻断列表
+                health = {"status": "error", "ok": False, "error": str(exc)[:200]}
+            _health_cache[p.capability.name] = (now, health)
+        out.append({**vars(p.capability), "health": health})
+    return out

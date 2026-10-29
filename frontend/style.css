@@ -51,6 +51,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .search-box input { flex: 1; padding: 9px 14px; border-radius: 10px; }
 .top-status { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 12px; white-space: nowrap; }
 .mode-dot { color: var(--green); font-weight: 600; }
+.channel { cursor: pointer; padding: 3px 10px; border-radius: 12px; font-weight: 600; }
+.channel.on { background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; }
+.channel.off { background: #FEF3C7; color: #B45309; border: 1px solid #FDE68A; }
 .icon-btn {
   width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line);
   background: #fff; font-size: 14px; line-height: 1;

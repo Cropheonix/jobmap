@@ -28,6 +28,8 @@ def read_preferences(db=Depends(get_db)):
         "tile_url": prefs.tile_url or "",
         "tile_attribution": prefs.tile_attribution or "",
         "tile_crs": prefs.tile_crs or "wgs84",
+        "external_searxng_url": prefs.external_searxng_url or "",
+        "filter_level": prefs.filter_level or "standard",
     }
 
 
@@ -45,6 +47,7 @@ def update_preferences(
         "commute_origin_lon": float, "commute_origin_lat": float, "org_type_pref": str,
         "ranking_mode": str, "enabled_providers": list, "keep_undisclosed_salary": bool,
         "tile_url": str, "tile_attribution": str, "tile_crs": str,
+        "external_searxng_url": str, "filter_level": str,
     }
     for field, caster in fields.items():
         if field in body and body[field] is not None:
@@ -65,6 +68,8 @@ def update_preferences(
         prefs.ranking_mode = "score"
     if prefs.tile_crs not in ("wgs84", "gcj02"):
         prefs.tile_crs = "wgs84"
+    if prefs.filter_level not in ("loose", "standard", "strict"):
+        prefs.filter_level = "standard"
     db.add(AuditEvent(event_type="prefs_update", detail={"fields": sorted(body.keys())}))
     db.commit()
     return read_preferences(db)

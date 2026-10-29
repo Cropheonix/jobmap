@@ -73,3 +73,15 @@ SOURCE_TYPES = {
 # 默认底图：OpenStreetMap 标准瓦片（遵循其使用政策，见 NOTICE.md）
 DEFAULT_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 DEFAULT_TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> 贡献者'
+
+# ── M2：搜索通道与筛选 ───────────────────────────────────────────
+# 嵌入式 SearXNG（enable_search.py 安装；默认引擎集合不含 google——开源产品礼貌姿态）
+SEARXNG_EMBEDDED_URL = "http://127.0.0.1:8889"
+DEFAULT_SEARCH_ENGINES = ["bing", "baidu", "duckduckgo", "qwant", "mojeek"]
+SEARCH_CHANNEL_CONFIG = BASE_DIR / "data" / "search-channel.json"
+
+# 源类型可信度（筛选 S5 与评分 R 共用口径）
+SOURCE_TYPE_TRUST = {
+    "official_site": 1.0, "gov_public": 0.95, "platform_public": 0.70,
+    "aggregator": 0.55, "user_import": 0.40, "sample": 0.35,
+}

@@ -43,12 +43,17 @@ def list_jobs(
     salary_undisclosed: str = "keep",
     published_within_days: int | None = None,
     order: str = "score",
+    zone: str = "active",   # active=榜单区(accepted+suspect) / quarantine=隔离区 / all=全部
     offset: int = 0,
     limit: int = Query(default=500, le=2000),
     db: Session = Depends(get_db),
 ):
     prefs = get_prefs(db)
     stmt = select(Job)
+    if zone == "quarantine":
+        stmt = stmt.where(Job.filter_zone == "quarantined")
+    elif zone != "all":
+        stmt = stmt.where((Job.filter_zone.is_(None)) | (Job.filter_zone != "quarantined"))
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.join(Organization, Job.organization_id == Organization.id).where(
@@ -203,6 +208,8 @@ def stats(db: Session = Depends(get_db)):
         select(SearchTask).order_by(SearchTask.started_at.desc()).limit(1)
     ).scalars().first()
     demo = sum(1 for j in jobs if j.is_demo)
+    quarantined = sum(1 for j in jobs if j.filter_zone == "quarantined")
+    discovered = sum(1 for j in jobs if j.discovered_via == "searxng_discovery")
     return {
         "total_jobs": len(jobs),
         "valid_jobs": active + unverified,
@@ -214,6 +221,8 @@ def stats(db: Session = Depends(get_db)):
         "organizations": orgs,
         "new_last_7d": new7,
         "demo_jobs": demo,
+        "quarantined_jobs": quarantined,
+        "discovered_jobs": discovered,
         "last_scan": (last_task.ended_at or last_task.started_at).isoformat() if last_task else None,
         "weights": prefs.weights,
     }

@@ -40,6 +40,7 @@ def _task_dto(task: SearchTask) -> dict:
         "steps": ordered,
         "counts": task.counts,
         "errors": task.errors,
+        "funnel": task.funnel or {},
         "started_at": task.started_at.isoformat() if task.started_at else None,
         "ended_at": task.ended_at.isoformat() if task.ended_at else None,
     }
@@ -90,6 +91,15 @@ def _run_task(task_id: int, provider_names: list[str]) -> None:
         if provider_names:
             recompute_all_scores()
         state = "cancelled" if cancelled() else "done"
+        # 漏斗与覆盖率进任务记录（供 UI 与报告复现）
+        for name, result in counts.items():
+            if isinstance(result, dict) and result.get("funnel"):
+                with db_scope() as db:
+                    t = db.get(SearchTask, task_id)
+                    if t:
+                        t.funnel = result["funnel"]
+                        db.commit()
+                break
     except Exception as exc:
         errors.append({"provider": "pipeline", "error": str(exc)})
         state = "failed"
@@ -123,9 +133,10 @@ def create_task(
     query = {"keywords": keywords, "city": (body.get("city") or "").strip(),
              "category": body.get("category") or ""}
     provider_names = body.get("providers") or ["sample"]
-    # 只允许 available 状态的源实际执行
+    # 可执行源：示例/导入/联网搜索（联网搜索不可用时在 discover 内给出明确错误说明）
     runnable = [n for n in provider_names
-                if n in REGISTRY and REGISTRY[n].capability.status == "available"]
+                if n in REGISTRY and (REGISTRY[n].capability.status == "available"
+                                      or n == "searxng_discovery")]
     if not runnable:
         raise HTTPException(422, "没有可执行的数据源（其余来源将在 M2 接入）")
 

@@ -68,6 +68,12 @@ def job_dto(db: Session, job: Job, weights: dict | None = None) -> dict:
         "status_label": JOB_STATUS.get(job.status, job.status),
         "status_reason": job.status_reason,
         "is_demo": bool(job.is_demo),
+        # M2 筛选算法字段
+        "filter_zone": job.filter_zone or "accepted",
+        "confidence": job.confidence,
+        "rejection_reason": job.rejection_reason or "",
+        "filter_flags": (job.filter_trace or {}).get("flags", []) if isinstance(job.filter_trace, dict) else [],
+        "discovered_via": job.discovered_via or "",
         "sources": [
             {
                 "provider": s.provider,

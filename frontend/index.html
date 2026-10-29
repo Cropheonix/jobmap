@@ -27,6 +27,8 @@
       </button>
     </div>
     <div class="top-status">
+      <span class="channel" :class="channel.on ? 'on' : 'off'" @click="openSettings"
+            :title="channel.hint || '联网搜索通道'">{{ channel.on ? '🛰 联网搜索·在线' : '🛰 联网搜索·未启用' }}</span>
       <span class="mode-dot">● 本地模式</span>
       <span class="dim">v{{ session.version || '1.0.0' }}</span>
       <span class="dim" v-if="stats.last_scan" title="最近一次搜索任务完成时间">数据最近更新：{{ fmtDateTime(stats.last_scan) }}</span>
@@ -213,6 +215,7 @@
               <span class="chip-mini" v-if="job.education">{{ job.education }}</span>
               <span class="chip-mini" v-if="job.location">{{ job.location.precision_label }}</span>
               <span class="chip-mini warn" v-for="mf in job.missing_fields" :key="mf">{{ missingLabel(mf) }}</span>
+              <span class="chip-mini warn" v-for="f in job.filter_flags" :key="f" :title="'筛选标记：' + f">{{ flagLabel(f) }}</span>
               <span class="chip-mini warn" v-if="job.completeness !== null && job.completeness < 40" title="证据完整度过低">建议人工核实</span>
             </div>
             <div class="jc-meta">
@@ -340,6 +343,14 @@
           <button :class="{on: draft.tileCrs==='wgs84'}" @click="draft.tileCrs='wgs84'">WGS-84（OSM 等）</button>
           <button :class="{on: draft.tileCrs==='gcj02'}" @click="draft.tileCrs='gcj02'">GCJ-02（国测局坐标系，自动换算）</button>
         </div>
+        <label class="f-label" style="margin-top:10px">联网搜索通道（外部 SearXNG 实例 URL，留空用本机嵌入式）</label>
+        <input v-model="draft.extUrl" placeholder="http://127.0.0.1:8889（嵌入式默认，运行 scripts/enable_search.py 启用）">
+        <label class="f-label">筛选严格度（相关性阈值与人工核实线）</label>
+        <select v-model="draft.filterLevel">
+          <option value="loose">宽松（宁多勿漏）</option>
+          <option value="standard">标准</option>
+          <option value="strict">严格（宁精勿多）</option>
+        </select>
         <p class="hint">修改期望薪资 / 通勤出发点后会按新偏好重算子分（M/P/D 与权重无关）。</p>
         <div class="modal-actions">
           <button class="btn primary" @click="saveSettings">保存并重算</button>

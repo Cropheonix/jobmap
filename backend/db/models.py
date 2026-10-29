@@ -40,6 +40,8 @@ class Organization(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     size_band: Mapped[str] = mapped_column(String(50), default="")
     verified_projects: Mapped[list] = mapped_column(JSON, default=list)  # 可核实的代表项目
+    uscc: Mapped[str] = mapped_column(String(30), default="", index=True)             # 统一社会信用代码
+    registered_region: Mapped[str] = mapped_column(String(50), default="")            # 注册地区
 
     jobs: Mapped[list["Job"]] = relationship(back_populates="organization")
 
@@ -69,6 +71,12 @@ class Job(Base):
     first_seen: Mapped[datetime] = mapped_column(Date, default=_today)
     last_checked: Mapped[datetime | None] = mapped_column(Date, nullable=True)
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    # M2 筛选算法字段（docs/filter-algorithm-design.md §9）
+    filter_zone: Mapped[str] = mapped_column(String(20), default="accepted", index=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rejection_reason: Mapped[str] = mapped_column(String(50), default="")
+    filter_trace: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    discovered_via: Mapped[str] = mapped_column(String(30), default="")
 
     organization: Mapped[Organization] = relationship(back_populates="jobs")
     sources: Mapped[list["JobSource"]] = relationship(
@@ -137,6 +145,7 @@ class SearchTask(Base):
     counts: Mapped[dict] = mapped_column(JSON, default=dict)
     errors: Mapped[list] = mapped_column(JSON, default=list)
     steps: Mapped[list] = mapped_column(JSON, default=list)
+    funnel: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class Score(Base):
@@ -175,6 +184,8 @@ class UserPreference(Base):
     tile_url: Mapped[str] = mapped_column(String(500), default="")
     tile_attribution: Mapped[str] = mapped_column(String(300), default="")
     tile_crs: Mapped[str] = mapped_column(String(10), default="wgs84")
+    external_searxng_url: Mapped[str] = mapped_column(String(300), default="")
+    filter_level: Mapped[str] = mapped_column(String(10), default="standard")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
 

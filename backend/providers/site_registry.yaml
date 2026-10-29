@@ -1,0 +1,32 @@
+# 站点注册表（URL 分诊器数据源）
+# pattern 为相对路径正则（re.search）；robots_verdict 为最近实测结论，运行时以实时 robots 为准。
+domains:
+  zhipin.com:
+    robots_verdict: "2026-10-29 实测：通用 UA 允许无参数详情页；禁带 query 的列表页与 /sem/"
+    min_interval: 3.0
+    pages:
+      - { pattern: "^/job_detail/[A-Za-z0-9_~]+\\.html$", type: job_page, parser: zhipin_job, fetcher: httpx }
+  zhaopin.com:
+    robots_verdict: "2026-10-29 实测：禁一切带 ? 的 URL 与 /user/、/api/；裸职位页允许"
+    min_interval: 3.0
+    pages:
+      - { pattern: "^/jobs?/[A-Za-z0-9_]+/?$", type: job_page, parser: zhaopin_job, fetcher: httpx }
+  zhihu.com:
+    robots_verdict: "对 Googlebot 开放内容页、禁 /search；通用规则运行时解析"
+    min_interval: 3.5
+    pages:
+      - { pattern: "^/question/\\d+", type: review_page, parser: zhihu_question, fetcher: httpx }
+  tieba.baidu.com:
+    robots_verdict: "按 UA 分规则，通用规则运行时解析"
+    min_interval: 3.0
+    pages:
+      - { pattern: "^/p/\\d+$", type: review_page, parser: tieba_thread, fetcher: httpx }
+  xiaohongshu.com:
+    robots_verdict: "限制严格：仅发现层摘要，不抓详情"
+    min_interval: 5.0
+    pages: []
+  job.mohrss.gov.cn:
+    robots_verdict: "政务公开，待运行时确认"
+    min_interval: 5.0
+    pages:
+      - { pattern: ".", type: gov_page, parser: gov_notice, fetcher: httpx }

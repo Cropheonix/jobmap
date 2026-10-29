@@ -100,6 +100,7 @@ def upsert_job_record(db: Session, record: dict) -> tuple[str, Job | None, str]:
         career_notes=record.get("career_notes") or "",
         last_checked=_parse_date(record.get("last_checked")),
         is_demo=bool(record.get("is_demo")),
+        discovered_via=record.get("discovered_via") or "",
     )
     db.add(job)
     db.flush()

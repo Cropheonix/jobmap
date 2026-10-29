@@ -14,6 +14,8 @@ from backend.db.seed import ensure_seeded
 async def lifespan(app: FastAPI):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(engine)
+    from backend.db.migrate import ensure_columns
+    ensure_columns()
     ensure_seeded()
     yield
 

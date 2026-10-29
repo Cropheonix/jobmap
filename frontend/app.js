@@ -12,6 +12,12 @@
     salary: "薪资未披露", address: "地址缺失", coords: "无法定位",
     published_at: "发布时间未知",
   };
+  const FLAG_LABELS = {
+    snippet_only: "仅索引摘要", stale: "信息陈旧", needs_review: "建议人工核实",
+    entity_unconfirmed: "主体待确认", entity_ambiguous: "同名歧义", city_mismatch: "城市不符",
+    salary_invalid: "薪资异常", date_invalid: "日期异常", geo_unverified: "地区待核实",
+    archived: "已归档", entity_ambiguous_2fa: "歧义",
+  };
 
   // WGS-84 → GCJ-02（当底图为国测局坐标系时使用）
   function wgs84ToGcj02(lon, lat) {
@@ -60,13 +66,14 @@
         selectedId: null,
         expandedId: null,
         mapPrecision: "district",
+        channel: { on: false, hint: "" },
         searchText: "",
         rankingMode: "score",
         weights: { ...DEFAULT_WEIGHTS },
         activePreset: "",
         presets: {},
         importMsg: "",
-        draft: { min: null, max: null, lon: null, lat: null, orgType: "", tileUrl: "", tileAttr: "", tileCrs: "wgs84" },
+        draft: { min: null, max: null, lon: null, lat: null, orgType: "", tileUrl: "", tileAttr: "", tileCrs: "wgs84", extUrl: "", filterLevel: "standard" },
         filters: {
           keywordsText: "", keywordMode: "AND", city: "", district: "",
           categories: [], experience: "", salaryMin: 0, keepUndisclosed: true,
@@ -176,7 +183,7 @@
     async mounted() {
       try { this.presets = JSON.parse(localStorage.getItem("jobmap_presets") || "{}"); } catch { this.presets = {}; }
       await this.loadSession();
-      await Promise.all([this.loadPrefs(), this.loadJobs(), this.loadStats()]);
+      await Promise.all([this.loadPrefs(), this.loadJobs(), this.loadStats(), this.loadProviders()]);
       this.$nextTick(() => this.initMap());
       setInterval(() => { if (!this.modal) this.loadStats(); }, 30000);
     },
@@ -210,6 +217,7 @@
           orgType: p.org_type_pref || "",
           tileUrl: this.session.tile?.url || "", tileAttr: this.session.tile?.attribution || "",
           tileCrs: this.session.tile?.crs || "wgs84",
+          extUrl: p.external_searxng_url || "", filterLevel: p.filter_level || "standard",
         };
         if (p.keywords?.length) this.searchText = p.keywords.join(" ");
         if (p.city) this.filters.city = p.city;
@@ -222,6 +230,16 @@
         } finally { this.loading = false; }
       },
       async loadStats() { this.stats = await this.api("/api/stats"); },
+      async loadProviders() {
+        try {
+          const d = await this.api("/api/providers");
+          const p = (d.providers || []).find((x) => x.name === "searxng_discovery");
+          this.channel = {
+            on: !!(p && p.health && p.health.ok),
+            hint: (p && p.health && p.health.hint) || "",
+          };
+        } catch { this.channel = { on: false, hint: "" }; }
+      },
 
       /* ── 评分（客户端即时计算） ── */
       jobTotal(job) {
@@ -234,6 +252,10 @@
       scoreClass(v) { return v >= 80 ? "hi" : v >= 65 ? "mid" : v >= 50 ? "low" : "weak"; },
       rankClass(idx) { return idx === 0 ? "r1" : idx === 1 ? "r2" : idx === 2 ? "r3" : ""; },
       missingLabel(k) { return MISSING_LABELS[k] || k; },
+      flagLabel(f) {
+        if (f.startsWith("conflict:")) return "字段冲突";
+        return FLAG_LABELS[f] || f;
+      },
       componentNotes(job, key) {
         const c = job.components?.[key];
         if (!c) return "";
@@ -284,9 +306,10 @@
         this.searching = true;
         try {
           const keywords = this.searchText.trim().replace(/[，,、]/g, " ").split(/\s+/).filter(Boolean);
+          const providers = this.channel.on ? ["searxng_discovery", "sample"] : ["sample"];
           const task = await this.api("/api/search/tasks", {
             method: "POST",
-            json: { keywords, city: this.filters.city, providers: ["sample"] },
+            json: { keywords, city: this.filters.city, providers },
           });
           this.pollTask(task.id);
         } catch (e) {
@@ -406,10 +429,12 @@
               tile_url: this.draft.tileUrl,
               tile_attribution: this.draft.tileAttr,
               tile_crs: this.draft.tileCrs,
+              external_searxng_url: this.draft.extUrl || "",
+              filter_level: this.draft.filterLevel,
             },
           });
           await this.api("/api/scores/recompute", { method: "POST" });
-          await Promise.all([this.loadSession(), this.loadJobs()]);
+          await Promise.all([this.loadSession(), this.loadJobs(), this.loadProviders()]);
           this.initMap();
           this.modal = null;
         } catch (e) { alert("保存失败：" + e.message); }
