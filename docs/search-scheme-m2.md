@@ -84,8 +84,8 @@
 
 | 方案 | 原理 | 优点 | 缺点 | 结论 |
 |---|---|---|---|---|
-| **SearXNG 自托管**（AGPL-3.0，11K+ stars） | 元搜索：本机实例转发查询到 Google/Bing/Baidu 等 70+ 引擎并聚合 | 免费、无 key、隐私好、JSON API（`settings.yml` 加 `json` 格式即可）、中文可用百度/必应引擎 | 需本地部署（Windows 推荐 Docker Desktop）；高频调用会被上游引擎限流/验证码；公共实例不开 JSON | ✅ **默认方案**。个人低频家用 IP 使用等同人工搜索，合规风险低 |
-| **Google PSE 官方 API**（Custom Search JSON API） | 官方 JSON API | **站点受限模式免费且不限次**（把目标职位/口碑站点固化进 PSE 配置）；全网模式 100 次/天免费 | 需 Google 账号一次性配置 cx/key；中文长尾弱于百度 | ✅ **增强通道**（详见 [discovery-fetch-design.md](discovery-fetch-design.md)） |
+| **SearXNG 自托管（嵌入式）**（AGPL-3.0，11K+ stars） | 元搜索：本机实例转发查询到 Google/Bing/Baidu 等 70+ 引擎并聚合 | **免 Docker 免 key**：enable_search 脚本 pip 装进独立 venv 并以子进程托管（已在 Windows+Py3.10 实测跑通，Python 3.10 需 3 个垫片、3.11+ 仅 1 个）；JSON API；中文可用百度/必应引擎 | 上游引擎对高频调用会限流/验证码；公共实例不开 JSON | ✅ **默认方案**。个人低频家用 IP 使用等同人工搜索，合规风险低（详见 [discovery-fetch-design.md](discovery-fetch-design.md)） |
+| Google PSE 官方 API | 官方 JSON API | 站点受限模式免费不限次 | **需 Google 账号申请 cx/key —— 开源默认不接入** | ⚠️ 降级为隐藏的可选插件（与付费 API 同级） |
 | YaCy（P2P 自建索引） | 自己爬+分布式索引，完全不依赖第三方 | 完全自主 | 索引规模与中文搜索质量不足 | ❌ 不作主力，预留为离线检索实验 |
 | Whoogle | Google 前端代理 | 轻量 | 单引擎、稳定性一般 | ❌ |
 | 直连 DuckDuckGo（`ddgs` 等非官方库） | 抓 DDG HTML 端点 | 免费 | 无官方 API、违反其 ToS 风险、中文弱 | ❌ 与本项目合规原则冲突 |
@@ -182,7 +182,7 @@ legal_signal = {
 
 | # | 决策 | 选项 | 推荐 |
 |---|---|---|---|
-| D1 | 发现层默认后端 | a) **自托管 SearXNG**（开源免费、无 key、Docker 部署，聚合 Google/Bing/Baidu）b) 博查 Bocha（~0.01元/次，稳定中文好）c) 智谱 web-search d) 多后端自动切换 | **a 为默认**，检测到 SearXNG 未部署或被限流时自动降级提示切换 b/c |
+| D1 | 发现层默认后端 | a) **嵌入式 SearXNG**（免 Docker 免 key，enable_search 一键启用，已实测）b) 用户已有的外部 SearXNG 实例（填 URL）c) 可选付费/PSE 插件（默认隐藏） | **a 为默认**；开源开箱零门槛，付费通道不引导不提示 |
 | D2 | 法律数据主通道 | a) 信用中国 API（免费需申请）b) 用户导入企查查/天眼查为主 c) 两者并重 | **c**：API 做底线，导入做深度 |
 | D3 | 口碑情感分析 | a) 本地负面词表规则（零成本可解释）b) 本地小模型（效果好需依赖）c) 云端 LLM | **a 起步**，预留 b 升级位；不上云 |
 | D4 | 自动核查范围 | Top-N（默认 20）公司自动 vs 全部手动 | **默认 20 可配置** |

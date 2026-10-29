@@ -1,0 +1,13 @@
+use_default_settings: true
+server:
+  secret_key: "jUNmVzQbFJvmMOJ-mzjjEeyk998qblFa99qPdrM79Z8"
+  bind_address: "127.0.0.1"
+  port: 8889
+  limiter: false
+  image_proxy: true
+search:
+  formats:
+    - html
+    - json
+ui:
+  static_use_hash: true
