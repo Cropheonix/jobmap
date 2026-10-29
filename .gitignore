@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# 本地数据（含用户求职记录，不入库）
+data/*.db
+data/*.db-*
+*.log
+
+# 导出产物
+exports/
+*.csv
+!sample-data/*.csv
+
+# IDE / OS
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+
+# Node（如后续引入 Vite 构建则恢复）
+node_modules/
+dist/

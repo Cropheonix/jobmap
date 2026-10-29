@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JobMap 求职情报地图</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <!-- ═══ 顶部：品牌 / 全局搜索 / 状态 ═══ -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">📍</div>
+      <div class="brand-text">
+        <h1>求职情报地图 JobMap</h1>
+        <p>全行业职位情报分析工具 · 本地优先 · 开源</p>
+      </div>
+    </div>
+    <div class="search-box">
+      <input v-model="searchText" placeholder="搜索公司、岗位或关键词，例如：后端工程师 成都"
+             @keyup.enter="startSearch" spellcheck="false">
+      <button class="btn primary" @click="startSearch" :disabled="searching">
+        {{ searching ? '搜索中…' : '🔍 搜索 / 刷新' }}
+      </button>
+    </div>
+    <div class="top-status">
+      <span class="mode-dot">● 本地模式</span>
+      <span class="dim">v{{ session.version || '1.0.0' }}</span>
+      <span class="dim" v-if="stats.last_scan" title="最近一次搜索任务完成时间">数据最近更新：{{ fmtDateTime(stats.last_scan) }}</span>
+      <button class="icon-btn" @click="openTasks" title="搜索任务">⏱</button>
+      <button class="icon-btn" @click="openSettings" title="设置">⚙</button>
+      <button class="icon-btn" @click="modal='algorithm'" title="算法解释">📖</button>
+      <button class="icon-btn" @click="openLogs" title="运行日志">🗒</button>
+    </div>
+  </header>
+
+  <!-- ═══ 处理流程六步 ═══ -->
+  <nav class="pipeline">
+    <template v-for="(s, i) in pipelineSteps" :key="s.step">
+      <div class="p-step" :class="s.state">
+        <span class="p-dot"></span>
+        <span class="p-label">{{ s.label }}</span>
+        <span class="p-count">{{ stepCountText(s) }}</span>
+      </div>
+      <span class="p-arrow" v-if="i < pipelineSteps.length - 1">›</span>
+    </template>
+    <button v-if="activeTask && activeTask.state === 'running'" class="btn tiny danger" @click="cancelTask">取消任务</button>
+    <span v-if="activeTask && activeTask.errors && activeTask.errors.length" class="p-error" :title="activeTask.errors.map(e=>e.error).join('；')">
+      ⚠ {{ activeTask.errors.length }} 个来源失败
+    </span>
+  </nav>
+
+  <!-- ═══ 主体三栏 ═══ -->
+  <main class="layout">
+
+    <!-- 左侧：筛选与权重 -->
+    <aside class="col-left">
+      <section class="card">
+        <h3 class="card-title">🎚 筛选条件</h3>
+
+        <label class="f-label">关键词（多词空格分隔）</label>
+        <div class="kw-row">
+          <input v-model="filters.keywordsText" placeholder="例如：后端 Python" spellcheck="false">
+          <div class="seg">
+            <button :class="{on: filters.keywordMode==='AND'}" @click="filters.keywordMode='AND'">AND</button>
+            <button :class="{on: filters.keywordMode==='OR'}" @click="filters.keywordMode='OR'">OR</button>
+          </div>
+        </div>
+
+        <div class="f-grid2">
+          <div>
+            <label class="f-label">城市</label>
+            <select v-model="filters.city">
+              <option value="">全部城市</option>
+              <option v-for="c in cities" :key="c" :value="c">{{ c }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="f-label">行政区</label>
+            <select v-model="filters.district">
+              <option value="">全部区域</option>
+              <option v-for="d in districts" :key="d" :value="d">{{ d }}</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="f-label">岗位类别（全行业）</label>
+        <div class="chip-group">
+          <button v-for="c in session.enums.job_categories" :key="c" class="chip"
+                  :class="{on: filters.categories.includes(c)}" @click="toggleIn(filters.categories, c)">{{ c }}</button>
+        </div>
+
+        <div class="f-grid2">
+          <div>
+            <label class="f-label">经验要求</label>
+            <select v-model="filters.experience">
+              <option value="">不限</option>
+              <option v-for="e in experienceLevels" :key="e" :value="e">{{ e }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="f-label">发布时间</label>
+            <select v-model="filters.publishedDays">
+              <option :value="0">不限</option>
+              <option :value="7">近 7 天</option>
+              <option :value="14">近 14 天</option>
+              <option :value="30">近 30 天</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="f-label">最低薪资（K/月）：{{ filters.salaryMin > 0 ? filters.salaryMin + 'K' : '不限' }}</label>
+        <input type="range" min="0" max="50" step="1" v-model.number="filters.salaryMin" class="slider">
+
+        <label class="f-label">未披露薪资的职位</label>
+        <div class="seg" style="width:100%">
+          <button :class="{on: filters.keepUndisclosed}" @click="filters.keepUndisclosed=true">保留</button>
+          <button :class="{on: !filters.keepUndisclosed}" @click="filters.keepUndisclosed=false">排除</button>
+        </div>
+
+        <label class="f-label">招聘状态</label>
+        <div class="chip-group">
+          <button v-for="(label, key) in session.enums.statuses" :key="key" class="chip"
+                  :class="{on: filters.statuses.includes(key), [key]: true}" @click="toggleIn(filters.statuses, key)">{{ label }}</button>
+        </div>
+
+        <label class="f-label">来源类型</label>
+        <div class="chip-group">
+          <button v-for="(label, key) in session.enums.source_types" :key="key" class="chip"
+                  :class="{on: filters.sourceTypes.includes(key)}" @click="toggleIn(filters.sourceTypes, key)">{{ label }}</button>
+        </div>
+
+        <label class="f-label">地址精度</label>
+        <div class="chip-group">
+          <button v-for="(label, key) in session.enums.precisions" :key="key" class="chip"
+                  :class="{on: filters.precisions.includes(key)}" @click="toggleIn(filters.precisions, key)">{{ label }}</button>
+        </div>
+
+        <label class="f-label">我的求职进度</label>
+        <div class="chip-group">
+          <button class="chip" :class="{on: filters.action==='all'}" @click="filters.action='all'">全部</button>
+          <button v-for="(label, key) in session.enums.actions" :key="key" v-if="key!=='none'" class="chip"
+                  :class="{on: filters.action===key}" @click="filters.action=key">{{ label }}</button>
+        </div>
+
+        <button class="btn ghost small" @click="resetFilters" style="margin-top:10px">重置全部筛选</button>
+      </section>
+
+      <section class="card">
+        <h3 class="card-title">⚖ 评分权重 <span class="dim" style="font-weight:400">（自动归一化 100%）</span></h3>
+        <div v-for="(label, key) in session.enums.weight_labels" :key="key" class="w-row">
+          <div class="w-head">
+            <span>{{ label }}</span>
+            <b>{{ weightsPct(key) }}%</b>
+          </div>
+          <input type="range" min="0" max="100" step="5" v-model.number="weights[key]" class="slider">
+        </div>
+        <div class="w-actions">
+          <button class="btn tiny ghost" @click="resetWeights">恢复默认</button>
+          <button class="btn tiny ghost" @click="savePreset">存为预设</button>
+          <select v-model="activePreset" @change="applyPreset" class="preset-select">
+            <option value="">载入预设…</option>
+            <option v-for="(p, name) in presets" :key="name" :value="name">{{ name }}</option>
+          </select>
+        </div>
+        <p class="hint">拖动滑块立即重排，不联网、不重新搜索。</p>
+      </section>
+
+      <section class="card">
+        <h3 class="card-title">🔀 排序方式</h3>
+        <label v-for="(label, key) in session.enums.ranking_modes" :key="key" class="radio-row">
+          <input type="radio" :value="key" v-model="rankingMode">
+          <span>{{ label }}</span>
+          <span class="dim" v-if="key==='team'" style="font-size:11px">（工作室→专业公司→大型企业分组）</span>
+        </label>
+      </section>
+    </aside>
+
+    <!-- 中部：职位榜单 -->
+    <section class="col-center">
+      <div class="list-head">
+        <h3>📋 职位榜单 <span class="dim">（{{ rankedJobs.length }} 条，去重后）</span></h3>
+        <span class="dim" v-if="activeTask">{{ taskStateLabel }}</span>
+      </div>
+
+      <div class="job-list" ref="jobList">
+        <div v-if="loading" class="empty">加载中…</div>
+        <div v-else-if="!rankedJobs.length" class="empty">
+          没有符合条件的职位。<br><span class="dim">试试放宽筛选，或点击右上角「搜索/刷新」导入示例数据。</span>
+        </div>
+
+        <article v-for="(job, idx) in rankedJobs" :key="job.id" class="job-card"
+                 :class="{selected: job.id === selectedId, expanded: job.id === expandedId}"
+                 :id="'job-card-' + job.id" @click="selectJob(job.id, 'card')">
+          <div class="rank" :class="rankClass(idx)">{{ idx + 1 }}</div>
+
+          <div class="jc-main">
+            <div class="jc-row1">
+              <span class="jc-company">{{ job.organization.name }}</span>
+              <span class="badge" :class="'t-' + job.organization.type">{{ job.organization.type_label }}</span>
+              <span class="badge" :class="'s-' + job.status">{{ job.status_label }}</span>
+              <span v-if="job.is_demo" class="badge demo" title="虚构演示数据，非真实招聘信息">演示</span>
+              <span v-if="job.sources_count > 1" class="badge srcs" title="多来源去重合并，展开查看全部原始链接">来自 {{ job.sources_count }} 个来源</span>
+            </div>
+            <h4 class="jc-title">{{ job.title }}</h4>
+            <p class="jc-summary">{{ job.description_summary }}</p>
+            <div class="jc-chips">
+              <span class="chip-mini">{{ job.job_category }}</span>
+              <span class="chip-mini" v-if="job.experience">{{ job.experience }}</span>
+              <span class="chip-mini" v-if="job.education">{{ job.education }}</span>
+              <span class="chip-mini" v-if="job.location">{{ job.location.precision_label }}</span>
+              <span class="chip-mini warn" v-for="mf in job.missing_fields" :key="mf">{{ missingLabel(mf) }}</span>
+              <span class="chip-mini warn" v-if="job.completeness !== null && job.completeness < 40" title="证据完整度过低">建议人工核实</span>
+            </div>
+            <div class="jc-meta">
+              <span>📍 {{ job.city }}{{ job.district ? ' · ' + job.district : '' }}{{ job.address ? ' · ' + job.address : '' }}</span>
+              <span>发布 {{ job.published_at || '未知' }}</span>
+              <span>核查 {{ job.last_checked || '未核查' }}</span>
+            </div>
+
+            <!-- 展开详情：分项得分 / 证据 -->
+            <div v-if="job.id === expandedId" class="jc-detail" @click.stop>
+              <div class="subscore-grid">
+                <div v-for="(label, key) in session.enums.weight_labels" :key="key" class="subscore">
+                  <div class="ss-head">
+                    <span>{{ label }}</span>
+                    <b>{{ (job.subscores[key] ?? '-') }} × {{ weightsPct(key) }}% = {{ ((job.subscores[key]||0) * normalizedWeights[key]).toFixed(1) }}</b>
+                  </div>
+                  <div class="bar"><i :style="{width: (job.subscores[key]||0) + '%'}"></i></div>
+                  <p class="dim ss-note">{{ componentNotes(job, key) }}</p>
+                </div>
+              </div>
+              <div class="evidence">
+                <h5>来源与证据（{{ job.sources_count }}）</h5>
+                <div v-for="s in job.sources" :key="s.url" class="src-row">
+                  <span class="chip-mini">{{ s.source_type_label }}</span>
+                  <a :href="s.url" target="_blank" rel="noopener noreferrer nofollow">{{ s.url }}</a>
+                  <span class="dim">{{ s.observed_at || '' }} · {{ s.access_status === 'accessible' ? '页面可访问' : (s.access_status === 'pending' ? '待核查' : '访问受限') }}</span>
+                </div>
+                <p class="dim" style="margin-top:6px">
+                  ⚠「页面可访问」≠「确认在招」。状态未核实的岗位保留在榜单中，但不作为可投递依据。
+                </p>
+                <h5 style="margin-top:10px">备注</h5>
+                <textarea v-model="job.action.note" rows="2" placeholder="面试时间、联系人、评估想法…"
+                          @change="saveNote(job)"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="jc-side" @click.stop>
+            <div class="score-circle" :class="scoreClass(jobTotal(job))">
+              <b>{{ jobTotal(job) }}</b><span>综合分</span>
+            </div>
+            <div class="comp">
+              <span class="dim">证据完整度</span>
+              <div class="bar small"><i :style="{width: (job.completeness||0) + '%'}"></i></div>
+              <span class="dim">{{ job.completeness ?? '-' }}%</span>
+            </div>
+            <div class="jc-actions">
+              <button class="act" :class="{on: job.action.status==='favorite'}" title="收藏"
+                      @click="setAction(job, 'favorite')">★</button>
+              <select class="act-select" :value="job.action.status" @change="setAction(job, $event.target.value)" title="求职进度">
+                <option v-for="(label, key) in session.enums.actions" :key="key" :value="key">{{ label }}</option>
+              </select>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- 右侧：地图 -->
+    <aside class="col-right">
+      <section class="card map-card">
+        <div class="map-head">
+          <h3 class="card-title">🗺 职位地图</h3>
+          <select v-model="mapPrecision" @change="renderMarkers" title="地址精度过滤">
+            <option value="district">含行政区示意</option>
+            <option value="block">街区/园区及以上</option>
+            <option value="building">仅门牌/楼宇</option>
+          </select>
+        </div>
+        <div class="legend">
+          <span><i class="lg studio"></i>工作室/事务所</span>
+          <span><i class="lg company"></i>专业公司</span>
+          <span><i class="lg enterprise"></i>大型企业/集团</span>
+          <span><i class="lg institute"></i>机构/事业单位</span>
+        </div>
+        <div id="map"></div>
+        <p class="hint">仅真实可推定位置上图；未核实坐标系的点不做精确导航。{{ session.offline_note }}</p>
+      </section>
+    </aside>
+  </main>
+
+  <!-- ═══ 底部：统计与操作 ═══ -->
+  <footer class="statusbar">
+    <div class="stat"><b>{{ stats.valid_jobs ?? '-' }}</b><span>有效职位</span></div>
+    <div class="stat"><b>{{ stats.unverified_jobs ?? '-' }}</b><span>待核实</span></div>
+    <div class="stat"><b>{{ stats.geo_located ?? '-' }}</b><span>地图点位</span></div>
+    <div class="stat"><b>{{ stats.sources_total ?? '-' }}</b><span>数据来源</span></div>
+    <div class="stat"><b>{{ stats.new_last_7d ?? '-' }}</b><span>近 7 日新增</span></div>
+    <div class="actions">
+      <button class="btn primary" @click="exportData('html')">📄 生成分析报告</button>
+      <button class="btn" @click="exportData('csv')">导出 CSV</button>
+      <button class="btn" @click="exportData('json')">导出 JSON</button>
+      <button class="btn" @click="startSearch">⟳ 刷新搜索</button>
+      <label class="btn ghost file-btn">导入数据<input type="file" accept=".json,.csv" @change="importFile" hidden></label>
+    </div>
+    <p class="foot-note">内置数据为虚构演示样本（卡片带「演示」标记）；导出报告含来源链接与评分说明。</p>
+  </footer>
+
+  <!-- ═══ 弹窗 ═══ -->
+  <div class="modal-mask" v-if="modal" @click.self="modal=null">
+    <div class="modal">
+
+      <div v-if="modal==='settings'">
+        <h3>⚙ 设置</h3>
+        <div class="f-grid2">
+          <div><label class="f-label">期望薪资下限（K/月）</label><input type="number" v-model.number="draft.min" min="0"></div>
+          <div><label class="f-label">期望薪资上限（K/月）</label><input type="number" v-model.number="draft.max" min="0"></div>
+        </div>
+        <div class="f-grid2">
+          <div><label class="f-label">通勤出发点 经度</label><input type="number" step="0.0001" v-model.number="draft.lon"></div>
+          <div><label class="f-label">通勤出发点 纬度</label><input type="number" step="0.0001" v-model.number="draft.lat"></div>
+        </div>
+        <button class="btn tiny ghost" @click="draft.lon=104.0665; draft.lat=30.5723">使用成都中心</button>
+        <label class="f-label" style="margin-top:8px">机构类型偏好（影响 C 维度）</label>
+        <select v-model="draft.orgType">
+          <option value="">无偏好</option>
+          <option v-for="(label, key) in session.enums.org_types" :key="key" :value="key">{{ label }}</option>
+        </select>
+        <label class="f-label" style="margin-top:8px">地图底图瓦片 URL 模板（需有合法使用权）</label>
+        <input v-model="draft.tileUrl" placeholder="https://tile.example/{z}/{x}/{y}.png">
+        <label class="f-label">底图归属文字</label>
+        <input v-model="draft.tileAttr">
+        <label class="f-label">底图坐标系</label>
+        <div class="seg" style="width:100%">
+          <button :class="{on: draft.tileCrs==='wgs84'}" @click="draft.tileCrs='wgs84'">WGS-84（OSM 等）</button>
+          <button :class="{on: draft.tileCrs==='gcj02'}" @click="draft.tileCrs='gcj02'">GCJ-02（国测局坐标系，自动换算）</button>
+        </div>
+        <p class="hint">修改期望薪资 / 通勤出发点后会按新偏好重算子分（M/P/D 与权重无关）。</p>
+        <div class="modal-actions">
+          <button class="btn primary" @click="saveSettings">保存并重算</button>
+          <button class="btn ghost" @click="modal=null">取消</button>
+        </div>
+      </div>
+
+      <div v-else-if="modal==='algorithm'">
+        <h3>📖 评分算法解释（v{{ session.algorithm_version }}）</h3>
+        <div class="algo-body">
+          <p><b>综合分 = 岗位匹配(M)×w₁ + 薪资(P)×w₂ + 团队(C)×w₃ + 可信度(R)×w₄ + 通勤(D)×w₅</b>，权重由滑块设置并归一化为 100%。当前权重：
+            <span v-for="(label, key) in session.enums.weight_labels" :key="key">{{ label }} {{ weightsPct(key) }}%　</span></p>
+          <ul>
+            <li><b>M 岗位匹配度</b>：职位标题 35% + 职责正文 35% + 行业/类别 20% + 技能关键词 10%（基于关键词规则，不依赖云端 AI）。</li>
+            <li><b>P 薪资匹配</b>：岗位公开区间与你的期望区间重叠度；多薪月适度加成。<b>薪资未披露取中性分 50 并标注「薪资未披露」</b>，绝不伪造。</li>
+            <li><b>C 团队与项目</b>：行业契合 30% + 可核实代表项目 25% + 成长路径 20% + 规模稳定性启发 15% + 机构偏好 10%。不以规模天然偏大公司。</li>
+            <li><b>R 来源可信度与时效</b>：来源可核实度 35% + 官方入口可见 25% + 发布/核查时效 25% + 字段完整 15%。<b>R 是信息可靠度估计，不是「保证在招」认证。</b></li>
+            <li><b>D 通勤距离</b>：与出发点的直线距离分档（粗略参考，标注非路径距离）；无出发点或无坐标取中性分 50。</li>
+          </ul>
+          <p><b>缺失与完整度：</b>缺失 ≠ 零分。证据完整度独立于总分展示；低于 40% 标记「建议人工核实」。</p>
+          <p><b>状态门控：</b>已截止/已下架岗位默认沉底并置灰，不混入可投递区；「状态未核实」的岗位保留但不高亮为在招。<b>页面可访问 ≠ 正在招聘</b>。</p>
+          <p><b>审计：</b>每次计算保存算法版本、权重快照与子分，导出报告可复现当时排序。</p>
+        </div>
+        <div class="modal-actions"><button class="btn ghost" @click="modal=null">关闭</button></div>
+      </div>
+
+      <div v-else-if="modal==='tasks'">
+        <h3>⏱ 搜索任务</h3>
+        <div v-if="!tasks.length" class="empty">暂无任务</div>
+        <table class="table" v-else>
+          <thead><tr><th>#</th><th>关键词</th><th>城市</th><th>状态</th><th>来源</th><th>结果</th><th>时间</th></tr></thead>
+          <tbody>
+            <tr v-for="t in tasks" :key="t.id">
+              <td>{{ t.id }}</td>
+              <td>{{ (t.query.keywords||[]).join(' ') || '—' }}</td>
+              <td>{{ t.query.city || '—' }}</td>
+              <td>{{ taskStateLabelOf(t) }}</td>
+              <td>{{ (t.providers||[]).join(', ') }}</td>
+              <td class="dim">{{ taskCountsText(t) }}</td>
+              <td class="dim">{{ fmtDateTime(t.started_at) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="modal-actions"><button class="btn ghost" @click="modal=null">关闭</button></div>
+      </div>
+
+      <div v-else-if="modal==='logs'">
+        <h3>🗒 运行日志（最近 50 条）</h3>
+        <table class="table">
+          <thead><tr><th>时间</th><th>事件</th><th>对象</th><th>详情</th></tr></thead>
+          <tbody>
+            <tr v-for="l in logs" :key="l.id">
+              <td class="dim">{{ fmtDateTime(l.timestamp) }}</td>
+              <td>{{ l.event_type }}</td>
+              <td>{{ l.record_id }}</td>
+              <td class="dim log-detail">{{ JSON.stringify(l.detail) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="modal-actions"><button class="btn ghost" @click="modal=null">关闭</button></div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+<script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
