@@ -2,6 +2,7 @@
 
 > 版本：2026-10-29 · 状态：**设计稿，等待确认**。确认后按第 11 节里程碑实施，随后再设计排序算法 v2（消费第 9 节的信号契约）。
 > 范围：职位发现（BOSS直聘/鱼泡/智联等 + 公共人力资源网站）、公司口碑（小红书/贴吧/知乎等）、公司法律与信用风险三类信号的获取方案。
+> 配套详细设计：[discovery-fetch-design.md](discovery-fetch-design.md)（搜索引擎接入通道与「搜索→抓取→关键信息提取」全链路）。
 
 ## 0. 结论摘要
 
@@ -84,6 +85,7 @@
 | 方案 | 原理 | 优点 | 缺点 | 结论 |
 |---|---|---|---|---|
 | **SearXNG 自托管**（AGPL-3.0，11K+ stars） | 元搜索：本机实例转发查询到 Google/Bing/Baidu 等 70+ 引擎并聚合 | 免费、无 key、隐私好、JSON API（`settings.yml` 加 `json` 格式即可）、中文可用百度/必应引擎 | 需本地部署（Windows 推荐 Docker Desktop）；高频调用会被上游引擎限流/验证码；公共实例不开 JSON | ✅ **默认方案**。个人低频家用 IP 使用等同人工搜索，合规风险低 |
+| **Google PSE 官方 API**（Custom Search JSON API） | 官方 JSON API | **站点受限模式免费且不限次**（把目标职位/口碑站点固化进 PSE 配置）；全网模式 100 次/天免费 | 需 Google 账号一次性配置 cx/key；中文长尾弱于百度 | ✅ **增强通道**（详见 [discovery-fetch-design.md](discovery-fetch-design.md)） |
 | YaCy（P2P 自建索引） | 自己爬+分布式索引，完全不依赖第三方 | 完全自主 | 索引规模与中文搜索质量不足 | ❌ 不作主力，预留为离线检索实验 |
 | Whoogle | Google 前端代理 | 轻量 | 单引擎、稳定性一般 | ❌ |
 | 直连 DuckDuckGo（`ddgs` 等非官方库） | 抓 DDG HTML 端点 | 免费 | 无官方 API、违反其 ToS 风险、中文弱 | ❌ 与本项目合规原则冲突 |
