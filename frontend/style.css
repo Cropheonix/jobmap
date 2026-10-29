@@ -193,6 +193,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .ss-note { font-size: 11px; margin-top: 3px; line-height: 1.5; word-break: break-all; }
 .evidence { margin-top: 12px; }
 .evidence h5 { font-size: 12.5px; margin-bottom: 6px; }
+.risk-box { background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 10px; padding: 10px 12px; }
+.risk-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }
 .src-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; flex-wrap: wrap; }
 .src-row a { color: var(--primary); word-break: break-all; }
 .evidence textarea { width: 100%; margin-top: 4px; }

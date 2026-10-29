@@ -20,14 +20,20 @@ class SearxngBackend(DiscoveryBackend):
 
     def search(self, query: str, *, engines: list[str] | None = None,
                pageno: int = 1, language: str = "zh-CN") -> list[DiscoveryHit]:
-        hits = self._search_once(query, engines=engines, pageno=pageno, language=language)
+        hits, unresponsive = self._search_once(query, engines=engines, pageno=pageno, language=language)
         if not hits and engines:
             # 引擎可用性因网络环境而异：限定引擎无结果时回退到实例默认引擎池
-            hits = self._search_once(query, engines=None, pageno=pageno, language=language)
+            hits, unresponsive = self._search_once(query, engines=None, pageno=pageno, language=language)
+        if not hits:
+            suspended = [u[0] for u in (unresponsive or [])
+                         if len(u) > 1 and "suspend" in str(u[1]).lower()]
+            if suspended:
+                raise DiscoveryError(
+                    f"上游引擎限流冷却中（{', '.join(suspended[:3])}），请稍后重试或减少查询频率")
         return hits
 
     def _search_once(self, query: str, *, engines: list[str] | None,
-                     pageno: int, language: str) -> list[DiscoveryHit]:
+                     pageno: int, language: str) -> tuple[list[DiscoveryHit], list]:
         params: dict = {"q": query, "format": "json", "language": language, "pageno": pageno}
         if engines:
             params["engines"] = ",".join(engines)
@@ -60,7 +66,7 @@ class SearxngBackend(DiscoveryBackend):
                 published_date=item.get("publishedDate"),
                 score=item.get("score"),
             ))
-        return hits
+        return hits, data.get("unresponsive_engines", []) or []
 
     def health(self) -> bool:
         try:

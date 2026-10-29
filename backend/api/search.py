@@ -16,18 +16,22 @@ router = APIRouter()
 # 任务取消标记（进程内）
 _cancel_flags: dict[int, bool] = {}
 
-_STEP_ORDER = ["discover", "extract", "dedup", "rank", "geo", "export"]
+_STEP_ORDER = ["discover", "extract", "dedup", "rank", "geo", "enrich", "export"]
 _STEP_LABELS = {
     "discover": "多源搜索", "extract": "信息提取", "dedup": "去重校验",
-    "rank": "权重排序", "geo": "地图标点", "export": "导出报告",
+    "rank": "权重排序", "geo": "地图标点", "enrich": "公司核查", "export": "导出报告",
 }
 
 
 def _task_dto(task: SearchTask) -> dict:
     steps = task.steps or []
     by_name = {s.get("step"): s for s in steps}
+    # 公司核查步骤仅对联网搜索任务展示（示例数据任务无核查语义）
+    order = list(_STEP_ORDER)
+    if "searxng_discovery" not in (task.providers or []):
+        order = [s for s in order if s != "enrich"]
     ordered = []
-    for name in _STEP_ORDER:
+    for name in order:
         s = by_name.get(name) or {"step": name, "state": "pending", "counts": {}}
         s = dict(s)
         s["label"] = _STEP_LABELS[name]

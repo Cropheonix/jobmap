@@ -69,6 +69,11 @@ def run_filters(record: dict, intent: intent_mod.Intent, *, thresholds: dict | N
         stage("S1", False, reason=required_err)
         return FilterResult(ZONE_QUARANTINED, "unverified", 0.0, 0.0, 0.0, 0.5,
                             flags=["missing_required"], stages=stages, rejection_reason="missing_required")
+    # 问答/科普页（「XX是什么职位」）：非职位发布页
+    if record.get("is_qa_page"):
+        stage("S2", False, reason="qa_page")
+        return FilterResult(ZONE_QUARANTINED, "unverified", 0.0, 0.0, 0.0, 0.5,
+                            flags=["qa_page"], stages=stages, rejection_reason="qa_page")
     # S1 字段级
     field_flags = valid_mod.validate_fields(record, today)
     stage("S1", True, flags=field_flags)

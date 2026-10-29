@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from datetime import date
 
-from backend.core.config import ALGORITHM_VERSION, DEFAULT_WEIGHTS, MISSING_NEUTRAL_SCORE
+from backend.core.config import ALGORITHM_VERSION, DEFAULT_WEIGHTS, MISSING_NEUTRAL_SCORE, WEIGHT_LABELS
 from backend.pipeline.coords import haversine_km
+
+SCORE_KEYS = tuple(WEIGHT_LABELS.keys())  # M/P/C/R/D/V（v1.1 起新增 V 公司风险）
 
 # ---- 关键词工具 -----------------------------------------------------------
 
@@ -216,7 +218,21 @@ def compute_completeness(job, org, sources, locations) -> float:
     return round(100 * got / total, 1)
 
 
-def score_job(job, prefs) -> dict:
+def compute_v(signals: dict | None) -> tuple[float, dict]:
+    """公司风险 V（100=最安全）：消费 review/legal 信号，门控与中性规则见 signals.service。"""
+    from backend.signals.service import risk_score_V
+    sig = signals or {}
+    v, flags = risk_score_V(sig.get("review"), sig.get("legal"))
+    detail = {"note": "无可用公司信号，取中性分"} if "risk_unverified" in flags else (
+             "信号置信度不足，只展示不评分" if "risk_unconfirmed" in flags else "已按口碑/法律信号计分")
+    return v, {"flags": flags, **detail,
+               "review_neg": (sig.get("review") or {}).get("neg_docs"),
+               "legal_total": sum((sig.get("legal") or {}).get(k) or 0
+                                  for k in ("labor_arbitration", "contract_dispute",
+                                            "enforcement", "admin_penalty", "wage_blacklist"))}
+
+
+def score_job(job, prefs, signals: dict | None = None) -> dict:
     """对单条岗位计算全部子分与完整度（不依赖权重；权重在汇总时应用）。"""
     org = job.organization
     sources = job.sources or []
@@ -229,6 +245,7 @@ def score_job(job, prefs) -> dict:
     c, c_detail = compute_c(job, org, prefs, tokens)
     r, r_detail = compute_r(job, sources)
     d, d_detail, d_missing = compute_d(location, prefs)
+    v, v_detail = compute_v(signals)
 
     missing_fields = []
     if p_missing:
@@ -242,8 +259,9 @@ def score_job(job, prefs) -> dict:
 
     return {
         "algorithm_version": ALGORITHM_VERSION,
-        "subscores": {"M": m, "P": p, "C": c, "R": r, "D": d},
-        "components": {"M": m_detail, "P": p_detail, "C": c_detail, "R": r_detail, "D": d_detail},
+        "subscores": {"M": m, "P": p, "C": c, "R": r, "D": d, "V": v},
+        "components": {"M": m_detail, "P": p_detail, "C": c_detail, "R": r_detail,
+                       "D": d_detail, "V": v_detail},
         "missing_fields": missing_fields,
         "completeness": compute_completeness(job, org, sources, locations),
     }
@@ -252,12 +270,12 @@ def score_job(job, prefs) -> dict:
 def weighted_total(subscores: dict, weights: dict) -> float:
     """综合分 = Σ w_i·s_i / Σ w_i；总权重为 0 时回退默认权重。"""
     w = weights or {}
-    total_w = sum(float(w.get(k, 0) or 0) for k in ("M", "P", "C", "R", "D"))
+    total_w = sum(float(w.get(k, 0) or 0) for k in SCORE_KEYS)
     if total_w <= 0:
         w = DEFAULT_WEIGHTS
         total_w = sum(w.values())
     total = sum(float(w.get(k, 0) or 0) * float(subscores.get(k, MISSING_NEUTRAL_SCORE))
-                for k in ("M", "P", "C", "R", "D"))
+                for k in SCORE_KEYS)
     return round(total / total_w, 1)
 
 

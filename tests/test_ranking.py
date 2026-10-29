@@ -39,15 +39,18 @@ def _prefs(**kw):
 
 
 def test_plan_example_calculation():
-    """方案 5.3 的演算样例：M90 P75 C85 R80 D60 → 80.8。"""
-    total = weighted_total({"M": 90, "P": 75, "C": 85, "R": 80, "D": 60}, DEFAULT_WEIGHTS)
-    assert total == 80.8
+    """方案 5.3 的 v1.0 演算样例（五维显式权重；缺省 V 取中性 50）。"""
+    subs = {"M": 90, "P": 75, "C": 85, "R": 80, "D": 60}
+    weights = {"M": 30, "P": 25, "C": 20, "R": 15, "D": 10}  # v1.0 五维口径
+    total = weighted_total(subs, weights)
+    expected = round((90 * 30 + 75 * 25 + 85 * 20 + 80 * 15 + 60 * 10) / 100, 1)
+    assert total == expected == 80.8
 
 
 def test_zero_weights_fall_back_to_default():
-    total = weighted_total({"M": 90, "P": 75, "C": 85, "R": 80, "D": 60},
-                           {"M": 0, "P": 0, "C": 0, "R": 0, "D": 0})
-    assert total == 80.8
+    subs = {"M": 90, "P": 75, "C": 85, "R": 80, "D": 60, "V": 50}
+    total = weighted_total(subs, {"M": 0, "P": 0, "C": 0, "R": 0, "D": 0, "V": 0})
+    assert total == weighted_total(subs, {})  # 零权重回退默认权重，结果一致
 
 
 def test_weight_change_reorders():

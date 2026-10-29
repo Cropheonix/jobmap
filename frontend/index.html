@@ -246,6 +246,27 @@
                 <p class="dim" style="margin-top:6px">
                   ⚠「页面可访问」≠「确认在招」。状态未核实的岗位保留在榜单中，但不作为可投递依据。
                 </p>
+                <h5 style="margin-top:10px">公司风险信号（口碑 + 法律，风险提示非定论）</h5>
+                <div v-if="job.org_risk" class="risk-box">
+                  <div class="risk-row">
+                    <b>风险分 V：{{ job.org_risk.V }}</b>
+                    <span class="chip-mini warn" v-for="f in job.org_risk.flags" :key="f">{{ f === 'wage_blacklist' ? '欠薪黑名单' : f === 'risk_negative' ? '风险偏负' : f === 'risk_unconfirmed' ? '信号未确认' : '未核查' }}</span>
+                  </div>
+                  <div class="risk-row dim" v-if="job.org_risk.review">
+                    口碑：{{ job.org_risk.review.docs }} 条证据（负面 {{ job.org_risk.review.neg_docs }}）
+                    <template v-if="job.org_risk.review.hit_keywords && job.org_risk.review.hit_keywords.length">
+                      · 高频词：{{ job.org_risk.review.hit_keywords.slice(0,5).join('、') }}
+                    </template>
+                    <template v-else-if="job.org_risk.review.incomplete"> · 暂无口碑证据</template>
+                  </div>
+                  <div class="risk-row dim" v-if="job.org_risk.legal">
+                    法律：劳动仲裁 {{ job.org_risk.legal.labor_arbitration }} · 合同纠纷 {{ job.org_risk.legal.contract_dispute }}
+                    · 被执行 {{ job.org_risk.legal.enforcement }} · 行政处罚 {{ job.org_risk.legal.admin_penalty }}
+                    <span v-if="job.org_risk.legal.wage_blacklist" class="chip-mini warn">欠薪黑名单</span>
+                  </div>
+                  <p class="dim" style="font-size:11px">证据为公开信息聚合，置信度不足时只展示不参与评分。</p>
+                </div>
+                <div v-else class="dim" style="font-size:12px">风险信号加载中…（展开时自动核查）</div>
                 <h5 style="margin-top:10px">备注</h5>
                 <textarea v-model="job.action.note" rows="2" placeholder="面试时间、联系人、评估想法…"
                           @change="saveNote(job)"></textarea>
@@ -361,7 +382,7 @@
       <div v-else-if="modal==='algorithm'">
         <h3>📖 评分算法解释（v{{ session.algorithm_version }}）</h3>
         <div class="algo-body">
-          <p><b>综合分 = 岗位匹配(M)×w₁ + 薪资(P)×w₂ + 团队(C)×w₃ + 可信度(R)×w₄ + 通勤(D)×w₅</b>，权重由滑块设置并归一化为 100%。当前权重：
+          <p><b>综合分 = 岗位匹配(M)×w₁ + 薪资(P)×w₂ + 团队(C)×w₃ + 可信度(R)×w₄ + 通勤(D)×w₅ + 公司风险(V)×w₆</b>，权重由滑块设置并归一化。当前权重：
             <span v-for="(label, key) in session.enums.weight_labels" :key="key">{{ label }} {{ weightsPct(key) }}%　</span></p>
           <ul>
             <li><b>M 岗位匹配度</b>：职位标题 35% + 职责正文 35% + 行业/类别 20% + 技能关键词 10%（基于关键词规则，不依赖云端 AI）。</li>
@@ -369,6 +390,7 @@
             <li><b>C 团队与项目</b>：行业契合 30% + 可核实代表项目 25% + 成长路径 20% + 规模稳定性启发 15% + 机构偏好 10%。不以规模天然偏大公司。</li>
             <li><b>R 来源可信度与时效</b>：来源可核实度 35% + 官方入口可见 25% + 发布/核查时效 25% + 字段完整 15%。<b>R 是信息可靠度估计，不是「保证在招」认证。</b></li>
             <li><b>D 通勤距离</b>：与出发点的直线距离分档（粗略参考，标注非路径距离）；无出发点或无坐标取中性分 50。</li>
+            <li><b>V 公司风险（v1.1 新增）</b>：消费口碑信号（知乎/小红书/贴吧证据 + 本地负面词规则）与法律信号（被执行/劳动仲裁/行政处罚/欠薪黑名单）。<b>置信度 &lt;0.7 的信号只展示不评分；无证据取中性 50</b>——查不到≠安全也≠危险。可在滑块处把 V 权重调零整体关闭。</li>
           </ul>
           <p><b>缺失与完整度：</b>缺失 ≠ 零分。证据完整度独立于总分展示；低于 40% 标记「建议人工核实」。</p>
           <p><b>状态门控：</b>已截止/已下架岗位默认沉底并置灰，不混入可投递区；「状态未核实」的岗位保留但不高亮为在招。<b>页面可访问 ≠ 正在招聘</b>。</p>

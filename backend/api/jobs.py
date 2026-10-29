@@ -116,7 +116,18 @@ def job_detail(job_id: int, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(404, "职位不存在")
     prefs = get_prefs(db)
-    return job_dto(db, job, prefs.weights)
+    dto = job_dto(db, job, prefs.weights)
+    # 公司风险摘要（信号契约消费方之一；低置信度信号仅展示）
+    try:
+        from backend.providers.enrichment import org_signals
+        from backend.signals.service import risk_score_V
+        if job.organization_id:
+            sig = org_signals(job.organization_id)
+            v, flags = risk_score_V(sig.get("review"), sig.get("legal"))
+            dto["org_risk"] = {"V": v, "flags": flags, **sig}
+    except Exception:
+        dto["org_risk"] = None
+    return dto
 
 
 @router.patch("/jobs/{job_id}/action")

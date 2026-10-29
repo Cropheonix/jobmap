@@ -208,3 +208,39 @@ class AuditEvent(Base):
     record_id: Mapped[str] = mapped_column(String(50), default="")
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=_now)
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class ReviewEvidence(Base):
+    """公司口碑证据（帖子级元数据，不存发帖人身份字段）。"""
+    __tablename__ = "review_evidence"
+    __table_args__ = (UniqueConstraint("organization_id", "url", name="uq_org_review_url"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    source: Mapped[str] = mapped_column(String(20))          # zhihu/xhs/tieba/other
+    url: Mapped[str] = mapped_column(String(800))
+    title: Mapped[str] = mapped_column(String(500), default="")
+    snippet: Mapped[str] = mapped_column(String(1000), default="")
+    published_at: Mapped[str | None] = mapped_column(Date, nullable=True)
+    sentiment: Mapped[str] = mapped_column(String(10), default="neutral")  # negative/neutral/positive
+    hit_keywords: Mapped[list] = mapped_column(JSON, default=list)
+    match_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    observed_at: Mapped[datetime] = mapped_column(Date, default=_today)
+
+
+class LegalRecord(Base):
+    """公司法律与信用记录（案件/公告级元数据）。"""
+    __tablename__ = "legal_records"
+    __table_args__ = (UniqueConstraint("organization_id", "url", name="uq_org_legal_url"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    source: Mapped[str] = mapped_column(String(30))          # creditchina/zxgk/hr_bulletin/user_import/discovery
+    record_type: Mapped[str] = mapped_column(String(30))     # labor_arbitration/contract_dispute/enforcement/admin_penalty/wage_blacklist
+    case_no: Mapped[str] = mapped_column(String(100), default="")
+    title: Mapped[str] = mapped_column(String(500), default="")
+    summary: Mapped[str] = mapped_column(String(1000), default="")
+    filing_date: Mapped[datetime | None] = mapped_column(Date, nullable=True)
+    match_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    url: Mapped[str] = mapped_column(String(800))
+    observed_at: Mapped[datetime] = mapped_column(Date, default=_today)

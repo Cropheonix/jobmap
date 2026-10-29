@@ -2,10 +2,11 @@
 # pattern 为相对路径正则（re.search）；robots_verdict 为最近实测结论，运行时以实时 robots 为准。
 domains:
   zhipin.com:
-    robots_verdict: "2026-10-29 实测：通用 UA 允许无参数详情页；禁带 query 的列表页与 /sem/"
-    min_interval: 3.0
+    robots_verdict: "2026-10-29 实测：通用 UA 允许无参数详情页与 /zhaopin/ 编码列表页；禁带 query 的列表页与 /sem/"
+    min_interval: 2.0
     pages:
       - { pattern: "^/job_detail/[A-Za-z0-9_~]+\\.html$", type: job_page, parser: zhipin_job, fetcher: httpx }
+      - { pattern: "^/zhaopin/", type: job_list, parser: zhipin_list, fetcher: playwright }  # JS 渲染页：默认不抓，需手动启用 Playwright 通道
   zhaopin.com:
     robots_verdict: "2026-10-29 实测：禁一切带 ? 的 URL 与 /user/、/api/；裸职位页允许"
     min_interval: 3.0

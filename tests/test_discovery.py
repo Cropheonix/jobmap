@@ -70,8 +70,11 @@ def test_planner_job_queries():
     texts = [p.query for p in plans]
     assert any("site:zhipin.com" in t for t in texts)
     assert any("site:zhaopin.com" in t for t in texts)
-    # 同词去重
-    assert len(texts) == len(set(texts))
+    # 同词同页去重（翻页允许同词不同页码）
+    pairs = [(p.query, p.pageno) for p in plans]
+    assert len(pairs) == len(set(pairs))
+    # 翻页扩量存在
+    assert any(p.pageno == 2 for p in plans)
     # 优先级排序：基础词在前
     assert plans[0].priority == 0
 

@@ -9,6 +9,31 @@ from backend.providers.sample_provider import SampleProvider
 from backend.ranking.engine import score_job, weighted_total
 
 
+def _load_signals(db) -> dict[int, dict]:
+    """按机构聚合口碑/法律证据 → 信号（评分 V 维度消费）。"""
+    from sqlalchemy import select as _select
+
+    from backend.db.models import LegalRecord, Organization, ReviewEvidence
+    from backend.signals.service import aggregate_legal, aggregate_review
+
+    out: dict[int, dict] = {}
+    orgs = {o.id: o for o in db.execute(_select(Organization)).scalars()}
+    reviews = db.execute(_select(ReviewEvidence)).scalars().all()
+    legals = db.execute(_select(LegalRecord)).scalars().all()
+    for org_id, org in orgs.items():
+        rv = [dict(source=e.source, title=e.title, snippet=e.snippet, sentiment=e.sentiment,
+                   hit_keywords=e.hit_keywords, match_confidence=e.match_confidence,
+                   published_at=str(e.published_at) if e.published_at else None)
+              for e in reviews if e.organization_id == org_id]
+        lg = [dict(record_type=r.record_type, filing_date=str(r.filing_date) if r.filing_date else None,
+                   match_confidence=r.match_confidence)
+              for r in legals if r.organization_id == org_id]
+        if rv or lg:
+            out[org_id] = {"review": aggregate_review(rv, orgs[org_id].canonical_name),
+                           "legal": aggregate_legal(lg)}
+    return out
+
+
 def ensure_seeded() -> None:
     with db_scope() as db:
         prefs = db.get(UserPreference, 1) or UserPreference(id=1)
@@ -39,10 +64,11 @@ def recompute_all_scores() -> dict:
         prefs = db.get(UserPreference, 1) or UserPreference(id=1, weights=DEFAULT_WEIGHTS)
         if not db.get(UserPreference, 1):
             db.add(prefs)
-        weights = prefs.weights or DEFAULT_WEIGHTS
+        weights = {**DEFAULT_WEIGHTS, **(prefs.weights or {})}
+        signals_by_org = _load_signals(db)
         n = 0
         for job in db.execute(select(Job)).scalars():
-            result = score_job(job, prefs)
+            result = score_job(job, prefs, signals=signals_by_org.get(job.organization_id))
             score = db.execute(
                 select(Score).where(Score.job_id == job.id,
                                     Score.algorithm_version == ALGORITHM_VERSION)

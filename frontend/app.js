@@ -4,7 +4,7 @@
 (() => {
   const { createApp } = Vue;
 
-  const DEFAULT_WEIGHTS = { M: 30, P: 25, C: 20, R: 15, D: 10 };
+  const DEFAULT_WEIGHTS = { M: 30, P: 25, C: 20, R: 15, D: 10, V: 10 };
   const PRECISION_RANK = { building: 0, block: 1, district: 2, unlocatable: 3 };
   const STATUS_GROUP = { active: 0, unverified: 1 };
   const ORG_GROUP = { studio: 0, company: 1, enterprise: 2, institute: 3, unknown: 4 };
@@ -151,8 +151,9 @@
         return items;
       },
       pipelineSteps() {
-        const steps = ["discover", "extract", "dedup", "rank", "geo", "export"];
-        const labels = { discover: "多源搜索", extract: "信息提取", dedup: "去重校验", rank: "权重排序", geo: "地图标点", export: "导出报告" };
+        const steps = ["discover", "extract", "dedup", "rank", "geo", "enrich", "export"];
+        const labels = { discover: "多源搜索", extract: "信息提取", dedup: "去重校验",
+                         rank: "权重排序", geo: "地图标点", enrich: "公司核查", export: "导出报告" };
         if (this.activeTask) {
           const map = Object.fromEntries((this.activeTask.steps || []).map((s) => [s.step, s]));
           return steps.map((k) => map[k] || { step: k, state: "pending", counts: {} });
@@ -160,7 +161,8 @@
         const s = this.stats;
         const countsByKey = {
           discover: s.sources_total, extract: s.total_jobs, dedup: s.total_jobs,
-          rank: this.rankedJobs.length, geo: s.geo_located, export: 1,
+          rank: this.rankedJobs.length, geo: s.geo_located, enrich: s.discovered_jobs ?? 0,
+          export: 1,
         };
         return steps.map((k) => ({ step: k, label: labels[k], state: "done", counts: { [k]: countsByKey[k] } }));
       },
@@ -241,11 +243,14 @@
         } catch { this.channel = { on: false, hint: "" }; }
       },
 
-      /* ── 评分（客户端即时计算） ── */
+      /* ── 评分（客户端即时计算，维度键随服务端枚举扩展） ── */
+      scoreKeys() {
+        return Object.keys(this.session.enums.weight_labels || {});
+      },
       jobTotal(job) {
         const w = this.normalizedWeights;
         let sum = 0;
-        for (const k of ["M", "P", "C", "R", "D"]) sum += (w[k] || 0) * (job.subscores?.[k] ?? 50);
+        for (const k of this.scoreKeys()) sum += (w[k] || 0) * (job.subscores?.[k] ?? 50);
         return Math.round(sum * 10) / 10;
       },
       weightsPct(key) { return Math.round((this.normalizedWeights[key] || 0) * 100); },
@@ -367,6 +372,13 @@
             const el = document.getElementById(`job-card-${id}`);
             if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
           });
+        }
+        // 展开时拉取公司风险信号（详情接口才带 org_risk）
+        if (this.expandedId === id && job && !job.org_risk) {
+          this.api(`/api/jobs/${id}`).then((detail) => {
+            const i = this.jobs.findIndex((j) => j.id === id);
+            if (i >= 0) this.jobs[i] = { ...this.jobs[i], ...detail };
+          }).catch(() => {});
         }
       },
 

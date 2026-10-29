@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import date, datetime
+from urllib.parse import urlparse
 
 try:  # 可选依赖，缺失时降级为纯正则
     import trafilatura  # type: ignore
@@ -20,6 +21,32 @@ _JSONLD_RE = re.compile(r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</sc
                         re.DOTALL | re.IGNORECASE)
 
 REGION_ALIASES = {"四川": "成都", "浙江": "杭州", "广东": "深圳"}
+
+
+_JOB_LINK_RES = [
+    re.compile(r'href="(/job_detail/[A-Za-z0-9_~]+\.html)"'),        # BOSS直聘
+    re.compile(r'href="(https?://www\.zhipin\.com/job_detail/[A-Za-z0-9_~]+\.html)"'),
+    re.compile(r'href="(/jobs/[A-Za-z0-9_]+/?)"'),                    # 智联
+]
+
+
+def extract_job_links(html: str, page_url: str) -> list[str]:
+    """从列表页 HTML 提取职位详情链接（一轮展开，仅绝对化路径不递归）。"""
+    base = page_url.rsplit("/", 1)[0]
+    found: list[str] = []
+    seen: set[str] = set()
+    for rx in _JOB_LINK_RES:
+        for m in rx.finditer(html or ""):
+            href = m.group(1)
+            if href.startswith("http"):
+                url = href.split("?")[0]
+            else:
+                url = (base + href if not href.startswith("/") else
+                       f"https://{urlparse(page_url).netloc}{href}").split("?")[0]
+            if url not in seen:
+                seen.add(url)
+                found.append(url)
+    return found
 
 
 def extract_jsonld(html: str) -> dict | None:
@@ -119,6 +146,38 @@ def extract_main_text(html: str) -> str:
     return re.sub(r"<[^>]+>", " ", html)[:4000]
 
 
+_ZHIPIN_SERP_PATTERNS = [
+    # 「岗位招聘」_公司名招聘 - BOSS直聘 / {岗位}招聘_{公司} - BOSS直聘
+    re.compile(r"[「“]?.{0,4}(?P<role>[^「」_]{2,25})(?:招聘)?[」”]?\s*_\s*(?P<org>[^-_「」]{2,25}?)\s*(?:公司)?招聘"),
+    # {岗位}是什么职位 - BOSS直聘（问答页，标记）
+    re.compile(r"(?P<qa>.{2,25})是什么职位"),
+    # {公司}{年份}年{岗位}工作要求/岗位职责
+    re.compile(r"(?P<org>[^0-9「」-]{2,25}?)20\d{2}年(?P<role>.{2,25}?)(?:工作|岗位)"),
+]
+
+
+def parse_zhipin_serp_title(title: str) -> dict:
+    """解析 BOSS直聘 SERP 标题结构：提取岗位名/公司名；问答页返回 is_qa 标记。"""
+    out: dict = {}
+    t = (title or "").strip()
+    m = _ZHIPIN_SERP_PATTERNS[1].search(t)
+    if m:
+        out["is_qa"] = True
+        out["title"] = m.group(1)
+        return out
+    m = _ZHIPIN_SERP_PATTERNS[0].search(t)
+    if m:
+        out["title"] = m.group("role").strip("「」“”招聘 ")
+        out["organization"] = {"name": m.group("org").strip("「」“” ")}
+        return out
+    m = _ZHIPIN_SERP_PATTERNS[2].search(t)
+    if m:
+        out["organization"] = {"name": m.group("org").strip()}
+        out["title"] = m.group("role").strip()
+        return out
+    return out
+
+
 def build_record(html: str, url: str, hit: dict | None = None) -> dict:
     """组合提取链，输出规范化记录（供筛选与入库）。
 
@@ -163,6 +222,17 @@ def build_record(html: str, url: str, hit: dict | None = None) -> dict:
         m = re.search(r"(.{2,20}?)(?:有限公司|股份有限公司|有限责任公司|集团公司|事务所|工作室)", title + " " + snippet)
         if m:
             record["organization"] = {"name": m.group(1)[-30:]}
+    # BOSS直聘 SERP 标题结构化解析（覆盖公司名提取盲区；问答页标记后由筛选处置）
+    if "zhipin.com" in url:
+        parsed = parse_zhipin_serp_title(record.get("title") or "")
+        if parsed.get("is_qa"):
+            record["status_hint"] = (record.get("status_hint") or "") + " 问答页"
+            record["is_qa_page"] = True
+        else:
+            if parsed.get("organization", {}).get("name") and not record["organization"].get("name"):
+                record["organization"] = parsed["organization"]
+            if parsed.get("title") and len(parsed["title"]) >= 2:
+                record["title"] = parsed["title"] + ("工程师" if "工程师" in (record.get("title") or "") and "工程师" not in parsed["title"] else "")
     return record
 
 
