@@ -30,7 +30,7 @@ def parse_topic(topic: dict) -> dict:
     m = re.search(r"[【\[]([\u4e00-\u9fa5]{2,4})[】\]]", title)
     city = m.group(1) if m else ""
     org_m = _ORG_RE.search(title + " " + content)
-    org_name = (org_m.group(1) + "公司") if org_m and org_m.group(1) else ""
+    org_name = org_m.group(0) if org_m else ""  # 完整匹配（含公司后缀词，入库时归一化）
     fields = extract_by_regex(f"{title}\n{content}")
     created = topic.get("created")
     published = None
