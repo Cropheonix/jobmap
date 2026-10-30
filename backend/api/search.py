@@ -123,6 +123,46 @@ def _run_task(task_id: int, provider_names: list[str]) -> None:
     _cancel_flags.pop(task_id, None)
 
 
+# 智能选源：意图类别 → 垂直源子集（docs/search-scheme 四层架构；减少无效请求与任务时长）
+_VERTICAL_BY_CATEGORY = {
+    "设计创意": ["gooood"],
+    "互联网/软件": ["v2ex", "remote_work"],
+    "金融/财务": ["jrzp", "iguopin"],
+    "教育/科研": ["jrzp", "iguopin"],
+    "医疗健康": ["jrzp", "iguopin"],
+    "建筑/地产": ["gooood", "iguopin"],
+    "销售/市场": ["iguopin", "remote_work"],
+    "职能/法律/人力": ["jrzp", "iguopin"],
+    "供应链/物流": ["iguopin", "remote_work"],
+    "制造/工业": ["iguopin"],
+    "其他行业": ["iguopin", "remote_work", "jrzp"],
+}
+_VERTICAL_ALL = ["iguopin", "jrzp", "gooood", "v2ex", "remote_work"]
+
+
+def pick_providers(keywords: list[str], city: str) -> list[str]:
+    """按意图类别挑选垂直源；查询无法归类时用全源（宁多勿漏）。"""
+    from backend.core.config import SEARXNG_EMBEDDED_URL
+    from backend.db.database import db_scope as _scope
+    from backend.db.models import UserPreference
+    from backend.discovery.searxng import SearxngBackend
+    from backend.filters import intent as intent_mod
+
+    it = intent_mod.parse_intent(" ".join([*keywords, city]))
+    verticals = list(_VERTICAL_BY_CATEGORY.get(it.category, _VERTICAL_ALL))
+    # 联网搜索通道在线时追加（T2 索引层；离线/限流自动省略）
+    try:
+        with _scope() as db:
+            prefs = db.get(UserPreference, 1)
+            url = (prefs.external_searxng_url or "").strip() if prefs else ""
+        if SearxngBackend(url or SEARXNG_EMBEDDED_URL).health():
+            verticals.append("searxng_discovery")
+    except Exception:
+        pass
+    verticals.append("sample")  # 演示数据源兜底
+    return verticals
+
+
 @router.post("/search/tasks")
 def create_task(
     body: dict,
@@ -136,7 +176,12 @@ def create_task(
         keywords = [k for k in keywords.replace("，", " ").replace(",", " ").split() if k]
     query = {"keywords": keywords, "city": (body.get("city") or "").strip(),
              "category": body.get("category") or ""}
-    provider_names = body.get("providers") or ["sample"]
+    # 智能选源：providers 为 ["auto"]/缺省时按意图类别挑选；显式指定则尊重用户
+    raw_providers = body.get("providers") or ["auto"]
+    if raw_providers == ["auto"] or not raw_providers:
+        provider_names = pick_providers(keywords, query["city"])
+    else:
+        provider_names = raw_providers
     # 可执行源：示例/导入/联网搜索（联网搜索不可用时在 discover 内给出明确错误说明）
     runnable = [n for n in provider_names
                 if n in REGISTRY and (REGISTRY[n].capability.status == "available"
