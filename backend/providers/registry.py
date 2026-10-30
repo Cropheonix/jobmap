@@ -1,6 +1,7 @@
 """数据源注册表。"""
 from backend.providers.base import ProviderCapability, SearchProvider
 from backend.providers.discovery_provider import SearxngDiscoveryProvider
+from backend.providers.gooood_provider import GoooodProvider
 from backend.providers.sample_provider import SampleProvider
 
 
@@ -53,7 +54,7 @@ class JobBoardPublicProvider(SearchProvider):
     )
 
 
-_ALL = [SearxngDiscoveryProvider(), SampleProvider(), UserImportProvider(),
+_ALL = [SearxngDiscoveryProvider(), GoooodProvider(), SampleProvider(), UserImportProvider(),
         OfficialSiteProvider(), GovPublicProvider(), SearchEngineProvider(),
         JobBoardPublicProvider()]
 

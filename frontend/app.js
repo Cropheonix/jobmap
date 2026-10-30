@@ -314,7 +314,7 @@
         this.searching = true;
         try {
           const keywords = this.searchText.trim().replace(/[，,、]/g, " ").split(/\s+/).filter(Boolean);
-          const providers = this.channel.on ? ["searxng_discovery", "sample"] : ["sample"];
+          const providers = ["gooood"].concat(this.channel.on ? ["searxng_discovery"] : []).concat(["sample"]);
           const task = await this.api("/api/search/tasks", {
             method: "POST",
             json: { keywords, city: this.filters.city, providers },

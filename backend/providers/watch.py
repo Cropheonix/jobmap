@@ -166,22 +166,30 @@ def _fetch_page_links(url: str) -> tuple[list[str], dict]:
 
 
 def _fetch_ats_board(spec: str) -> tuple[list[str], dict]:
-    """Greenhouse 官方公开招聘接口（无需认证）：ats_board = greenhouse:<board_token>。"""
+    """企业官方 ATS 公开接口（无需认证）：ats_board = greenhouse:<token> | lever:<site> | ashby:<name>。"""
     provider, _, token = spec.partition(":")
-    if provider != "greenhouse":
-        raise ValueError(f"暂不支持的 ATS：{provider}")
     with httpx.Client(timeout=12, trust_env=False) as c:
-        resp = c.get(f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs")
-        resp.raise_for_status()
-        data = resp.json()
-    titles = {}
-    links = []
-    for job in data.get("jobs", []):
-        url = job.get("absolute_url") or ""
-        if url:
-            links.append(url)
-            titles[url] = job.get("title") or ""
-    return links, titles
+        if provider == "greenhouse":
+            resp = c.get(f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs")
+            resp.raise_for_status()
+            items = resp.json().get("jobs", [])
+            titles = {j["absolute_url"]: j.get("title", "") for j in items if j.get("absolute_url")}
+            return list(titles), titles
+        if provider == "lever":
+            resp = c.get(f"https://api.lever.co/v0/postings/{token}?mode=json")
+            resp.raise_for_status()
+            items = resp.json()
+            titles = {j.get("hostedUrl") or f"lever://{j.get('id', '')}": j.get("text", "")
+                      for j in items}
+            return list(titles), titles
+        if provider == "ashby":
+            resp = c.get(f"https://api.ashbyhq.com/posting-api/job-board/{token}")
+            resp.raise_for_status()
+            items = resp.json().get("jobs", [])
+            titles = {j.get("jobUrl") or j.get("applyUrl", ""): j.get("title", "")
+                      for j in items}
+            return list(titles), titles
+    raise ValueError(f"暂不支持的 ATS：{provider}")
 
 
 def run_watch(limit: int = 50) -> dict:

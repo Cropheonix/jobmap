@@ -73,6 +73,7 @@ SOURCE_TYPES = {
     "official_site": "公司官网",
     "gov_public": "公开招聘公告",
     "platform_public": "招聘平台公开页",
+    "vertical_site": "垂直行业站",
     "aggregator": "聚合索引",
     "user_import": "用户导入",
     "sample": "内置示例",
@@ -91,5 +92,5 @@ SEARCH_CHANNEL_CONFIG = BASE_DIR / "data" / "search-channel.json"
 # 源类型可信度（筛选 S5 与评分 R 共用口径）
 SOURCE_TYPE_TRUST = {
     "official_site": 1.0, "gov_public": 0.95, "platform_public": 0.70,
-    "aggregator": 0.55, "user_import": 0.40, "sample": 0.35,
+    "vertical_site": 0.75, "aggregator": 0.55, "user_import": 0.40, "sample": 0.35,
 }
