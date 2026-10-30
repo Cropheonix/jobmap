@@ -32,6 +32,11 @@ def _norm(text: str) -> str:
     return text.strip().lower()
 
 
+# 泛岗位词：单独出现时不映射到任何特定同义词组（防止「工程师」被吸进「算法工程师」）
+GENERIC_ROLES = {"工程师", "设计师", "经理", "助理", "专员", "教师", "老师", "分析师",
+                 "架构师", "运营", "顾问", "实习生", "研究员", "职员"}
+
+
 def parse_intent(text: str, synonyms: dict | None = None) -> Intent:
     syn = synonyms or load_synonyms()
     role_map: dict[str, list[str]] = {k: [k] + list(v) for k, v in (syn.get("role_synonyms") or {}).items()}
@@ -54,6 +59,11 @@ def parse_intent(text: str, synonyms: dict | None = None) -> Intent:
         if _is_city_like(stripped):
             intent.city = stripped
             continue
+        # 泛岗位词：保持原词，不进特定词组
+        if t in GENERIC_ROLES:
+            if t not in intent.role_terms:
+                intent.role_terms.append(t)
+            continue
         matched_role = False
         for main, variants in role_map.items():
             if any(v in t or t in v for v in variants if v):
@@ -71,12 +81,15 @@ def parse_intent(text: str, synonyms: dict | None = None) -> Intent:
     for u in list(intent.unmatched):
         if u not in intent.role_terms:
             intent.role_terms.append(_norm(u))
-    # 主词与类别提示
-    for main in role_map:
-        if main in intent.role_terms:
-            intent.primary_role = main
-            intent.category = intent.category or role_category.get(main, "")
-            break
+    # 主词与类别提示（泛词也可作主词）
+    if intent.role_terms and intent.role_terms[0] in GENERIC_ROLES:
+        intent.primary_role = intent.role_terms[0]
+    else:
+        for main in role_map:
+            if main in intent.role_terms:
+                intent.primary_role = main
+                intent.category = intent.category or role_category.get(main, "")
+                break
     if not intent.primary_role and intent.role_terms:
         intent.primary_role = intent.role_terms[0]
     return intent

@@ -2,6 +2,8 @@
 from backend.providers.base import ProviderCapability, SearchProvider
 from backend.providers.discovery_provider import SearxngDiscoveryProvider
 from backend.providers.gooood_provider import GoooodProvider
+from backend.providers.iguopin_provider import IguopinProvider
+from backend.providers.remote_work_provider import RemoteWorkProvider
 from backend.providers.v2ex_provider import V2exProvider
 from backend.providers.sample_provider import SampleProvider
 
@@ -55,7 +57,8 @@ class JobBoardPublicProvider(SearchProvider):
     )
 
 
-_ALL = [SearxngDiscoveryProvider(), GoooodProvider(), V2exProvider(), SampleProvider(), UserImportProvider(),
+_ALL = [SearxngDiscoveryProvider(), IguopinProvider(), RemoteWorkProvider(),
+        GoooodProvider(), V2exProvider(), SampleProvider(), UserImportProvider(),
         OfficialSiteProvider(), GovPublicProvider(), SearchEngineProvider(),
         JobBoardPublicProvider()]
 
