@@ -42,6 +42,8 @@ class Organization(Base):
     verified_projects: Mapped[list] = mapped_column(JSON, default=list)  # 可核实的代表项目
     uscc: Mapped[str] = mapped_column(String(30), default="", index=True)             # 统一社会信用代码
     registered_region: Mapped[str] = mapped_column(String(50), default="")            # 注册地区
+    recruiting_page: Mapped[str] = mapped_column(String(500), default="")             # 官方招聘页（T1 监测目标）
+    ats_board: Mapped[str] = mapped_column(String(100), default="")                   # ATS 看板（如 greenhouse:token）
 
     jobs: Mapped[list["Job"]] = relationship(back_populates="organization")
 
@@ -199,6 +201,31 @@ class JobAction(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
     job: Mapped[Job] = relationship(back_populates="action")
+
+
+class DomainAccessState(Base):
+    """T3 探测后降级：域名访问状态持久化（WAF 壳页 → 永久降级为索引线索，绝不重试）。"""
+    __tablename__ = "domain_access_state"
+
+    domain: Mapped[str] = mapped_column(String(200), primary_key=True)
+    state: Mapped[str] = mapped_column(String(20), default="ok")     # ok / downgraded / blocked
+    feature: Mapped[str] = mapped_column(String(200), default="")    # 命中的风控特征
+    probe_count: Mapped[int] = mapped_column(Integer, default=0)
+    detected_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class SiteSnapshot(Base):
+    """T1 官网监测快照：招聘链接集合对比，输出本周新增/下架。"""
+    __tablename__ = "site_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    url: Mapped[str] = mapped_column(String(800))
+    links_hash: Mapped[str] = mapped_column(String(64), default="")  # 当前链接集合哈希
+    links: Mapped[list] = mapped_column(JSON, default=list)
+    added: Mapped[list] = mapped_column(JSON, default=list)          # 与上次对比新增
+    removed: Mapped[list] = mapped_column(JSON, default=list)        # 与上次对比下架
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
 
 class AuditEvent(Base):

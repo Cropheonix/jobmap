@@ -17,6 +17,22 @@ USER_AGENT = "JobMap/1.0 (+local personal research; 127.0.0.1)"
 _LOGIN_URL_MARKERS = ("login", "signin", "passport.", "account/verify")
 _LOGIN_TEXT_MARKERS = ("登录后查看", "请登录", "扫码登录", "登录查看更多", "立即登录")
 _CAPTCHA_TEXT_MARKERS = ("验证码", "安全验证", "异常流量", "滑动验证", "请完成验证")
+# T3 WAF 壳页特征：探测到即永久降级为索引线索模式（docs 用户架构方案）
+_WAF_SHELL_MARKERS = ("请稍候", "_waf_", "just a moment", "checking your browser",
+                      "请求被拦截", "访问验证", "点此进行安全验证")
+
+
+def detect_waf_shell(result: "FetchResult") -> bool:
+    """WAF 挑战壳页启发式：命中标记词，或内容极短且无实质文本。"""
+    text = result.html or ""
+    if any(m in text[:30000].lower() for m in _WAF_SHELL_MARKERS):
+        return True
+    if 0 < len(text) < 15000:
+        import re
+        body = re.sub(r"<script.*?</script>|<[^>]+>|\s", "", text, flags=re.DOTALL)
+        if len(body) < 200:  # 剥掉标签与脚本后几乎无文本 → 壳页
+            return True
+    return False
 
 
 @dataclass
@@ -109,13 +125,27 @@ class Fetcher:
             result.final_url = str(resp.url)
             result.html = resp.text[:262144]  # 单页上限 256KB
         except httpx.HTTPError as exc:
-            result.reason = f"{type(exc).__name__}: {exc}"
-            self.backoff.record(domain, False)
-            return result
+            # 政府站常见 TLS 兼容问题：https 失败时降级 http 重试一次（仅读取公开公告）
+            if url.startswith("https://") and self._is_gov(urlparse(url).netloc):
+                try:
+                    resp = self._client.get("http://" + url[len("https://"):])
+                    result.status = resp.status_code
+                    result.final_url = str(resp.url)
+                    result.html = resp.text[:262144]
+                except httpx.HTTPError:
+                    result.reason = f"{type(exc).__name__}: {exc}"
+                    self.backoff.record(domain, False)
+                    return result
+            else:
+                result.reason = f"{type(exc).__name__}: {exc}"
+                self.backoff.record(domain, False)
+                return result
 
         flags = self._detect_flags(result)
+        if not flags and detect_waf_shell(result):
+            flags.append("waf_shell")
         result.flags = flags
-        hard_block = bool({"captcha", "login_wall"} & set(flags)) or result.status in (403, 412, 429)
+        hard_block = bool({"captcha", "login_wall", "waf_shell"} & set(flags)) or result.status in (403, 412, 429)
         result.ok = result.status == 200 and not hard_block
         self.backoff.record(domain, result.ok)
         if not result.ok:

@@ -158,6 +158,92 @@ async def import_data(
     return result
 
 
+@router.post("/import/text")
+def import_text(
+    body: dict,
+    db=Depends(get_db),
+    token: str | None = Header(default=None, alias="X-JobMap-Token"),
+):
+    """T4 用户辅助导入：粘贴职位文本/URL/HTML 片段（用户自行复制允许使用的内容）。
+
+    - 单行 http(s) URL：robots 允许则抓一次提取，否则登记为待核查线索；
+    - 文本块：走正则提取链（岗位/薪资/经验/公司后缀启发），缺失字段留空由用户在界面确认。
+    """
+    if not require_token(token):
+        raise HTTPException(403, "缺少或错误的本地会话令牌")
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(422, "内容为空")
+    from datetime import date
+
+    from backend.filters import intent as intent_mod
+    from backend.filters.pipeline import run_filters
+    from backend.pipeline.extractor import build_record
+    from backend.pipeline.loader import upsert_job_record
+    from backend.core.security import validate_public_http_url
+
+    url = ""
+    html = ""
+    if "\n" not in text and text.startswith(("http://", "https://")):
+        ok, reason = validate_public_http_url(text)
+        if not ok:
+            raise HTTPException(422, f"URL 校验失败：{reason}")
+        url = text
+        html = ""
+        try:
+            import httpx
+            with httpx.Client(timeout=12, follow_redirects=True,
+                              headers={"User-Agent": "JobMap/1.0 (+user paste)"}) as c:
+                resp = c.get(url)
+                if resp.status_code == 200:
+                    html = resp.text[:262144]
+        except Exception:
+            html = ""
+        record = build_record(html, url, {"title": "", "snippet": ""})
+        if not html:
+            record["extraction_tier"] = "snippet"
+            record["description_summary"] = "用户粘贴的 URL，原文未抓取（待核查）"
+    else:
+        lines = [l.strip() for l in text.splitlines() if l.strip()]
+        record = build_record("", "https://import.jobmap.local/paste", {
+            "title": lines[0][:120] if lines else "",
+            "snippet": " ".join(lines[1:])[:600],
+        })
+        record["sources"] = [{
+            "provider": "用户粘贴", "url": url or "https://import.jobmap.local/paste",
+            "source_type": "user_import", "access_status": "pending",
+            "observed_at": str(date.today()),
+            "evidence_excerpt": text[:200],
+            "license_note": "用户自行复制导入，由用户负责来源合法性",
+        }]
+    if not record.get("sources"):
+        record["sources"] = [{
+            "provider": "用户粘贴", "url": url, "source_type": "user_import",
+            "access_status": "accessible" if html else "pending",
+            "observed_at": str(date.today()), "evidence_excerpt": text[:200],
+            "license_note": "用户自行复制导入，由用户负责来源合法性",
+        }]
+    record["is_demo"] = False
+    record["discovered_via"] = "user_paste"
+    record.setdefault("city", (body.get("city") or ""))
+
+    from backend.api.system import get_prefs
+    prefs = get_prefs(db)
+    user_intent = intent_mod.parse_intent(" ".join(prefs.keywords or []) + " " + (prefs.city or ""))
+    result = run_filters(record, user_intent, today=date.today())
+    outcome, job, why = upsert_job_record(db, record)
+    if job is not None:
+        job.filter_zone = result.zone if result.zone != "quarantined" else "accepted_suspect"
+        job.confidence = result.confidence
+        job.rejection_reason = result.rejection_reason or ""
+        job.filter_trace = result.to_trace()
+        job.discovered_via = "user_paste"
+    db.add(AuditEvent(event_type="import_text", detail={"outcome": outcome, "url": url[:200]}))
+    db.commit()
+    return {"result": outcome, "reason": why, "job_id": job.id if job else None,
+            "missing_fields": result.to_trace().get("flags", [])}
+
+
 def _parse_csv_jobs(text: str) -> list[dict]:
     reader = csv.DictReader(io.StringIO(text))
     records = []

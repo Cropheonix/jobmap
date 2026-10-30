@@ -225,12 +225,18 @@ class SearxngDiscoveryProvider(SearchProvider):
             report("extract", "done")
 
     def _fetch_page(self, url, rule, browser, fetcher, budget, counts):
-        """统一取页：robots 判定 → 按 registry 传输方式（httpx 优先，白名单站点失败时浏览器回退）。"""
+        """统一取页：robots + T3 域名降级检查 → 按 registry 传输方式（httpx 优先，白名单站点失败时浏览器回退一次）。"""
+        if budget["fetch"] <= 0:
+            return None
+        from backend.providers.watch import domain_downgraded, mark_domain_downgraded
+        domain = url.split("/")[2] if "://" in url else ""
+        if domain and domain_downgraded(domain):
+            counts["snippet_only"] = counts.get("snippet_only", 0)
+            return None  # T3：该域名已探测撞墙，永久走索引线索，绝不重试
         ok, _why = fetcher.can_fetch(url)
-        if not ok or budget["fetch"] <= 0:
+        if not ok:
             return None
         want_browser = rule.fetcher == "playwright"
-        domain = url.split("/")[2] if "://" in url else ""
         whitelisted = any(domain == s or domain.endswith("." + s) or s in domain for s in _BROWSER_SITES)
 
         fr = None
@@ -241,11 +247,16 @@ class SearxngDiscoveryProvider(SearchProvider):
         else:
             fr = fetcher.fetch(url)
             budget["fetch"] -= 1
-            # httpx 被风控拦截（login_wall/captcha/重定向）且白名单站点 → 真浏览器回退一次
+            # T3：WAF 壳页/登录墙/验证码 → 标记域名降级（后续不再探测）
+            if not fr.ok and domain and ({"waf_shell", "login_wall", "captcha"} & set(fr.flags)):
+                mark_domain_downgraded(domain, ",".join(fr.flags) + f";status={fr.status}")
+            # httpx 被风控拦截且白名单站点 → 真浏览器回退一次（回退成功不降级）
             if not fr.ok and browser and whitelisted and budget["fetch"] > 0:
                 fr = browser.fetch(url)
                 budget["fetch"] -= 1
                 counts["browser_pages"] += 1
+                if fr.ok and domain:
+                    pass  # 浏览器可达，维持可探测状态
         return fr
 
     # ── 记录入库（筛选 → upsert → 筛选字段回填）─────────────

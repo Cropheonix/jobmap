@@ -1,12 +1,24 @@
-"""机构信号接口（M2.4 信号契约）。"""
-from fastapi import APIRouter, Depends, HTTPException
+"""机构信号接口（M2.4 信号契约）与官网监测（T1）。"""
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
 
 from backend.db.database import get_db
-from backend.db.models import LegalRecord, Organization, ReviewEvidence
+from backend.db.models import LegalRecord, Organization, ReviewEvidence, SiteSnapshot
 from backend.providers.enrichment import org_signals
 
 router = APIRouter()
+
+
+@router.post("/orgs/watch/run")
+def watch_run(limit: int = 50, token: str | None = Header(default=None, alias="X-JobMap-Token")):
+    """T1 企业官网监测：检查所有配置了招聘页/ATS 的机构，快照对比输出新增/下架。"""
+    from backend.core.security import require_token
+    if not require_token(token):
+        raise HTTPException(403, "缺少或错误的本地会话令牌")
+    from backend.providers.watch import run_watch
+    summary = run_watch(limit=min(limit, 100))
+    summary["details"] = summary["details"][:10]  # 详情截断，避免响应过大
+    return summary
 
 
 @router.get("/orgs/{org_id}/signals")

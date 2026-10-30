@@ -7,6 +7,8 @@ from backend.db.database import engine
 _COLUMNS = [
     ("organizations", "uscc", "VARCHAR(30) DEFAULT ''"),
     ("organizations", "registered_region", "VARCHAR(50) DEFAULT ''"),
+    ("organizations", "recruiting_page", "VARCHAR(500) DEFAULT ''"),
+    ("organizations", "ats_board", "VARCHAR(100) DEFAULT ''"),
     ("jobs", "filter_zone", "VARCHAR(20) DEFAULT 'accepted'"),
     ("jobs", "confidence", "FLOAT"),
     ("jobs", "rejection_reason", "VARCHAR(50) DEFAULT ''"),

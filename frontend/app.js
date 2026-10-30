@@ -73,6 +73,8 @@
         activePreset: "",
         presets: {},
         importMsg: "",
+        pasteText: "",
+        watching: false,
         draft: { min: null, max: null, lon: null, lat: null, orgType: "", tileUrl: "", tileAttr: "", tileCrs: "wgs84", extUrl: "", filterLevel: "standard" },
         filters: {
           keywordsText: "", keywordMode: "AND", city: "", district: "",
@@ -425,6 +427,28 @@
           this.renderMarkers();
         } catch (e) { alert("导入失败：" + e.message); }
         ev.target.value = "";
+      },
+      async submitPaste() {
+        try {
+          const r = await this.api("/api/import/text", {
+            method: "POST", json: { text: this.pasteText, city: this.filters.city },
+          });
+          alert(`导入${r.result === "created" ? "成功" : "已合并"}${r.missing_fields?.length ? "（提示：" + r.missing_fields.join("、") + "，可在卡片中补充）" : ""}`);
+          this.pasteText = "";
+          this.modal = null;
+          await Promise.all([this.loadJobs(), this.loadStats()]);
+          this.renderMarkers();
+        } catch (e) { alert("导入失败：" + e.message); }
+      },
+      async runWatch() {
+        this.watching = true;
+        try {
+          const r = await this.api("/api/orgs/watch/run?limit=50", { method: "POST" });
+          alert(`官网监测完成：${r.orgs} 家机构，新增 ${r.added} 条招聘链接，下架 ${r.removed} 条`);
+          await Promise.all([this.loadJobs(), this.loadStats()]);
+          this.renderMarkers();
+        } catch (e) { alert("监测失败：" + e.message); }
+        finally { this.watching = false; }
       },
 
       /* ── 设置 ── */

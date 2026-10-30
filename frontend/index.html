@@ -330,7 +330,9 @@
       <button class="btn" @click="exportData('csv')">导出 CSV</button>
       <button class="btn" @click="exportData('json')">导出 JSON</button>
       <button class="btn" @click="startSearch">⟳ 刷新搜索</button>
-      <label class="btn ghost file-btn">导入数据<input type="file" accept=".json,.csv" @change="importFile" hidden></label>
+      <label class="btn ghost file-btn">导入文件<input type="file" accept=".json,.csv" @change="importFile" hidden></label>
+      <button class="btn ghost" @click="modal='paste'">📋 粘贴导入</button>
+      <button class="btn ghost" @click="runWatch" :disabled="watching">{{ watching ? '监测中…' : '🏛 官网监测' }}</button>
     </div>
     <p class="foot-note">内置数据为虚构演示样本（卡片带「演示」标记）；导出报告含来源链接与评分说明。</p>
   </footer>
@@ -401,6 +403,16 @@
           <p><b>审计：</b>每次计算保存算法版本、权重快照与子分，导出报告可复现当时排序。</p>
         </div>
         <div class="modal-actions"><button class="btn ghost" @click="modal=null">关闭</button></div>
+      </div>
+
+      <div v-else-if="modal==='paste'">
+        <h3>📋 粘贴导入职位（T4 用户辅助）</h3>
+        <p class="hint">在招聘平台正常浏览后，把你<b>允许使用</b>的内容复制到这里：职位链接、或整段岗位文字。缺失字段会留空待你确认，JobMap 不自动编造。</p>
+        <textarea v-model="pasteText" rows="9" placeholder="示例一（链接）：https://www.zhipin.com/job_detail/xxxx.html&#10;示例二（文字）：&#10;商业空间设计师 10-18K&#10;方物空间设计 · 武侯区 · 3-5年 · 本科&#10;负责零售/餐饮空间设计，熟练 CAD/SU。"></textarea>
+        <div class="modal-actions">
+          <button class="btn primary" @click="submitPaste" :disabled="!pasteText.trim()">解析并导入</button>
+          <button class="btn ghost" @click="modal=null">取消</button>
+        </div>
       </div>
 
       <div v-else-if="modal==='tasks'">

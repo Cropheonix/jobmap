@@ -26,8 +26,21 @@ domains:
     robots_verdict: "限制严格：仅发现层摘要，不抓详情"
     min_interval: 5.0
     pages: []
+  # ── T1 免风控直取层（2026-10-30 POC 实测结论）──
+  gooood.cn:
+    robots_verdict: "POC 实测：完全开放直取，/category/jobs/ 列表 107KB 实内容、214 招聘链接"
+    min_interval: 3.0
+    pages:
+      - { pattern: "^/(category/)?jobs/?$", type: job_list, parser: generic, fetcher: httpx }
+      - { pattern: "^/category/interview-jobs", type: job_list, parser: generic, fetcher: httpx }
+      - { pattern: "^/job/", type: job_page, parser: generic, fetcher: httpx }
+  iguopin.com:
+    robots_verdict: "POC 实测：SPA 壳页（1KB），需 Playwright 或走 T2 索引"
+    min_interval: 4.0
+    pages:
+      - { pattern: "^/job", type: job_list, parser: generic, fetcher: playwright }
   job.mohrss.gov.cn:
-    robots_verdict: "政务公开，待运行时确认"
+    robots_verdict: "POC 实测：https TLS 不兼容需 http 回退；http 200 正常"
     min_interval: 5.0
     pages:
       - { pattern: ".", type: gov_page, parser: gov_notice, fetcher: httpx }
