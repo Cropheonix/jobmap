@@ -110,6 +110,32 @@ def list_jobs(
     }
 
 
+@router.post("/jobs/{job_id}/restore")
+def restore_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    token: str | None = Header(default=None, alias="X-JobMap-Token"),
+):
+    """隔离区恢复：用户确认「这条其实相关」，quarantined → accepted_suspect 并清原因。"""
+    if not require_token(token):
+        raise HTTPException(403, "缺少或错误的本地会话令牌")
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "职位不存在")
+    if job.filter_zone != "quarantined":
+        raise HTTPException(422, "该职位不在隔离区")
+    job.filter_zone = "accepted_suspect"
+    job.rejection_reason = ""
+    trace = job.filter_trace if isinstance(job.filter_trace, dict) else {}
+    trace["zone"] = "accepted_suspect"
+    trace["restored_by_user"] = True
+    job.filter_trace = trace
+    db.add(AuditEvent(event_type="job_restored", record_id=str(job.id), detail={"from": "quarantined"}))
+    db.commit()
+    prefs = get_prefs(db)
+    return job_dto(db, job, prefs.weights)
+
+
 @router.get("/jobs/{job_id}")
 def job_detail(job_id: int, db: Session = Depends(get_db)):
     job = db.get(Job, job_id)

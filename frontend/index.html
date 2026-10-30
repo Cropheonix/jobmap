@@ -185,6 +185,11 @@
     <section class="col-center">
       <div class="list-head">
         <h3>📋 职位榜单 <span class="dim">（{{ rankedJobs.length }} 条，去重后）</span></h3>
+        <div class="seg" style="width:auto">
+          <button :class="{on: viewMode==='board'}" @click="viewMode='board'">榜单区</button>
+          <button :class="{on: viewMode==='quarantine'}" @click="viewMode='quarantine'">隔离区{{ stats.quarantined_jobs ? '('+stats.quarantined_jobs+')' : '' }}</button>
+          <button :class="{on: viewMode==='archive'}" @click="viewMode='archive'">归档区</button>
+        </div>
         <span class="dim" v-if="activeTask">{{ taskStateLabel }}</span>
       </div>
 
@@ -214,6 +219,7 @@
               <span class="chip-mini" v-if="job.experience">{{ job.experience }}</span>
               <span class="chip-mini" v-if="job.education">{{ job.education }}</span>
               <span class="chip-mini" v-if="job.location">{{ job.location.precision_label }}</span>
+              <span class="chip-mini warn" v-if="viewMode==='quarantine' && job.rejection_reason" title="隔离原因（可恢复）">⛔ {{ rejectionLabel(job.rejection_reason) }}</span>
               <span class="chip-mini warn" v-for="mf in job.missing_fields" :key="mf">{{ missingLabel(mf) }}</span>
               <span class="chip-mini warn" v-for="f in job.filter_flags" :key="f" :title="'筛选标记：' + f">{{ flagLabel(f) }}</span>
               <span class="chip-mini warn" v-if="job.completeness !== null && job.completeness < 40" title="证据完整度过低">建议人工核实</span>
@@ -284,6 +290,8 @@
               <span class="dim">{{ job.completeness ?? '-' }}%</span>
             </div>
             <div class="jc-actions">
+              <button v-if="viewMode==='quarantine'" class="act on" title="恢复到榜单（用户确认相关）"
+                      @click="restoreJob(job)">↩ 恢复</button>
               <button class="act" :class="{on: job.action.status==='favorite'}" title="收藏"
                       @click="setAction(job, 'favorite')">★</button>
               <select class="act-select" :value="job.action.status" @change="setAction(job, $event.target.value)" title="求职进度">
@@ -377,6 +385,10 @@
         <label class="radio-row" style="margin-top:8px">
           <input type="checkbox" v-model="draft.browserFetch">
           <span>真浏览器抓取通道（Playwright，BOSS/知乎等 JS 页与风控页；未安装自动降级）</span>
+        </label>
+        <label class="radio-row">
+          <input type="checkbox" v-model="draft.watchAuto">
+          <span>官网监测自动运行（每 <input type="number" v-model.number="draft.watchDays" min="1" max="30" style="width:52px;padding:2px 6px"> 天检查一次新增/下架）</span>
         </label>
         <p class="hint">修改期望薪资 / 通勤出发点后会按新偏好重算子分（M/P/D 与权重无关）。</p>
         <div class="modal-actions">

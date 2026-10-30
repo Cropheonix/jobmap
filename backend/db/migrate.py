@@ -18,6 +18,8 @@ _COLUMNS = [
     ("user_preferences", "external_searxng_url", "VARCHAR(300) DEFAULT ''"),
     ("user_preferences", "filter_level", "VARCHAR(10) DEFAULT 'standard'"),
     ("user_preferences", "browser_fetch_enabled", "BOOLEAN DEFAULT 1"),
+    ("user_preferences", "watch_auto_enabled", "BOOLEAN DEFAULT 1"),
+    ("user_preferences", "watch_interval_days", "INTEGER DEFAULT 7"),
 ]
 
 

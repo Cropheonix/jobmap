@@ -189,6 +189,8 @@ class UserPreference(Base):
     external_searxng_url: Mapped[str] = mapped_column(String(300), default="")
     filter_level: Mapped[str] = mapped_column(String(10), default="standard")
     browser_fetch_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    watch_auto_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    watch_interval_days: Mapped[int] = mapped_column(Integer, default=7)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
 

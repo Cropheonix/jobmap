@@ -17,6 +17,8 @@ async def lifespan(app: FastAPI):
     from backend.db.migrate import ensure_columns
     ensure_columns()
     ensure_seeded()
+    from backend.core.scheduler import start_scheduler
+    start_scheduler()  # OrgWatch 周期自动监测（可在设置关闭）
     yield
 
 

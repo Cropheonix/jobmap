@@ -15,10 +15,18 @@ def watch_run(limit: int = 50, token: str | None = Header(default=None, alias="X
     from backend.core.security import require_token
     if not require_token(token):
         raise HTTPException(403, "缺少或错误的本地会话令牌")
+    from backend.core.scheduler import mark_manual_run
     from backend.providers.watch import run_watch
     summary = run_watch(limit=min(limit, 100))
+    mark_manual_run()
     summary["details"] = summary["details"][:10]  # 详情截断，避免响应过大
     return summary
+
+
+@router.get("/orgs/watch/status")
+def watch_status():
+    from backend.core.scheduler import watch_status as status
+    return status()
 
 
 @router.get("/orgs/{org_id}/signals")

@@ -75,6 +75,7 @@
         importMsg: "",
         pasteText: "",
         watching: false,
+        viewMode: "board",
         draft: { min: null, max: null, lon: null, lat: null, orgType: "", tileUrl: "", tileAttr: "", tileCrs: "wgs84", extUrl: "", filterLevel: "standard" },
         filters: {
           keywordsText: "", keywordMode: "AND", city: "", district: "",
@@ -111,7 +112,11 @@
           if (f.district && j.district !== f.district) return false;
           if (f.categories.length && !f.categories.includes(j.job_category)) return false;
           if (f.experience && j.experience !== f.experience) return false;
-          if (f.statuses.length && !f.statuses.includes(j.status)) return false;
+          if (this.viewMode === "archive") {
+            if (!["expired", "closed"].includes(j.status)) return false;
+          } else if (this.viewMode === "quarantine") {
+            // 隔离区：不按状态过滤，按隔离原因浏览
+          } else if (f.statuses.length && !f.statuses.includes(j.status)) return false;
           if (f.sourceTypes.length && !j.sources.some((s) => f.sourceTypes.includes(s.source_type))) return false;
           if (f.precisions.length && !f.precisions.includes(j.location_precision)) return false;
           if (f.action !== "all" && j.action.status !== f.action) return false;
@@ -182,6 +187,7 @@
       },
       rankingMode() { this.debouncedSaveWeights(); },
       "filters.city"() { this.filters.district = ""; },
+      viewMode() { this.loadJobs(); },
     },
 
     async mounted() {
@@ -223,6 +229,8 @@
           tileCrs: this.session.tile?.crs || "wgs84",
           extUrl: p.external_searxng_url || "", filterLevel: p.filter_level || "standard",
           browserFetch: p.browser_fetch_enabled !== false,
+          watchAuto: p.watch_auto_enabled !== false,
+          watchDays: p.watch_interval_days || 7,
         };
         if (p.keywords?.length) this.searchText = p.keywords.join(" ");
         if (p.city) this.filters.city = p.city;
@@ -230,7 +238,8 @@
       async loadJobs() {
         this.loading = true;
         try {
-          const d = await this.api("/api/jobs?limit=2000");
+          const zone = this.viewMode === "quarantine" ? "quarantine" : "active";
+          const d = await this.api(`/api/jobs?limit=2000&zone=${zone}`);
           this.jobs = d.items;
         } finally { this.loading = false; }
       },
@@ -260,6 +269,18 @@
       scoreClass(v) { return v >= 80 ? "hi" : v >= 65 ? "mid" : v >= 50 ? "low" : "weak"; },
       rankClass(idx) { return idx === 0 ? "r1" : idx === 1 ? "r2" : idx === 2 ? "r3" : ""; },
       missingLabel(k) { return MISSING_LABELS[k] || k; },
+      rejectionLabel(r) {
+        return { low_relevance: "相关性不足", spam_suspect: "疑似垃圾", user_excluded: "用户排除",
+                 missing_required: "字段缺失", qa_page: "问答页", engine_cooldown: "引擎限流" }[r] || r;
+      },
+      async restoreJob(job) {
+        try {
+          const updated = await this.api(`/api/jobs/${job.id}/restore`, { method: "POST" });
+          const i = this.jobs.findIndex((j) => j.id === job.id);
+          if (i >= 0) this.jobs.splice(i, 1);  // 移出隔离区视图（榜单区重新可见）
+          await this.loadStats();
+        } catch (e) { alert("恢复失败：" + e.message); }
+      },
       flagLabel(f) {
         if (f.startsWith("conflict:")) return "字段冲突";
         return FLAG_LABELS[f] || f;
@@ -469,6 +490,8 @@
               external_searxng_url: this.draft.extUrl || "",
               filter_level: this.draft.filterLevel,
               browser_fetch_enabled: !!this.draft.browserFetch,
+              watch_auto_enabled: !!this.draft.watchAuto,
+              watch_interval_days: this.draft.watchDays || 7,
             },
           });
           await this.api("/api/scores/recompute", { method: "POST" });
