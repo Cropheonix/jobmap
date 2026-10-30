@@ -220,6 +220,7 @@
           tileUrl: this.session.tile?.url || "", tileAttr: this.session.tile?.attribution || "",
           tileCrs: this.session.tile?.crs || "wgs84",
           extUrl: p.external_searxng_url || "", filterLevel: p.filter_level || "standard",
+          browserFetch: p.browser_fetch_enabled !== false,
         };
         if (p.keywords?.length) this.searchText = p.keywords.join(" ");
         if (p.city) this.filters.city = p.city;
@@ -443,6 +444,7 @@
               tile_crs: this.draft.tileCrs,
               external_searxng_url: this.draft.extUrl || "",
               filter_level: this.draft.filterLevel,
+              browser_fetch_enabled: !!this.draft.browserFetch,
             },
           });
           await this.api("/api/scores/recompute", { method: "POST" });

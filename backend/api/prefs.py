@@ -30,6 +30,7 @@ def read_preferences(db=Depends(get_db)):
         "tile_crs": prefs.tile_crs or "wgs84",
         "external_searxng_url": prefs.external_searxng_url or "",
         "filter_level": prefs.filter_level or "standard",
+        "browser_fetch_enabled": prefs.browser_fetch_enabled if prefs.browser_fetch_enabled is not None else True,
     }
 
 
@@ -47,7 +48,7 @@ def update_preferences(
         "commute_origin_lon": float, "commute_origin_lat": float, "org_type_pref": str,
         "ranking_mode": str, "enabled_providers": list, "keep_undisclosed_salary": bool,
         "tile_url": str, "tile_attribution": str, "tile_crs": str,
-        "external_searxng_url": str, "filter_level": str,
+        "external_searxng_url": str, "filter_level": str, "browser_fetch_enabled": bool,
     }
     for field, caster in fields.items():
         if field in body and body[field] is not None:

@@ -186,6 +186,7 @@ class UserPreference(Base):
     tile_crs: Mapped[str] = mapped_column(String(10), default="wgs84")
     external_searxng_url: Mapped[str] = mapped_column(String(300), default="")
     filter_level: Mapped[str] = mapped_column(String(10), default="standard")
+    browser_fetch_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
 

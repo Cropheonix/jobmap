@@ -372,6 +372,10 @@
           <option value="standard">标准</option>
           <option value="strict">严格（宁精勿多）</option>
         </select>
+        <label class="radio-row" style="margin-top:8px">
+          <input type="checkbox" v-model="draft.browserFetch">
+          <span>真浏览器抓取通道（Playwright，BOSS/知乎等 JS 页与风控页；未安装自动降级）</span>
+        </label>
         <p class="hint">修改期望薪资 / 通勤出发点后会按新偏好重算子分（M/P/D 与权重无关）。</p>
         <div class="modal-actions">
           <button class="btn primary" @click="saveSettings">保存并重算</button>

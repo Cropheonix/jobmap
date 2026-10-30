@@ -24,6 +24,10 @@ from backend.providers.base import ProviderCapability, SearchProvider
 
 _SPAM_WORDS = ("日结", "加微信", "加v", "点击申请", "立即提现", "高薪兼职")
 
+# Playwright 真浏览器通道白名单（设计 D7）：BOSS（JS 渲染+风控）与知乎（JS 内容）
+_BROWSER_SITES = ("zhipin.com", "zhihu.com")
+_QUERY_BUDGET = 60  # 单任务发现层查询上限（限流治理：节流 2.5s/次 + 引擎冷却记账）
+
 _SITE_SOURCE_TYPE = {
     "zhipin.com": "platform_public", "zhaopin.com": "platform_public",
     "51job.com": "platform_public", "liepin.com": "platform_public", "yupao.com": "platform_public",
@@ -70,7 +74,7 @@ class SearxngDiscoveryProvider(SearchProvider):
         counts = {"discovered": 0, "fetched": 0, "snippet_only": 0, "list_pages": 0,
                   "expanded": 0, "accepted": 0, "suspect": 0, "quarantined": 0,
                   "created": 0, "merged": 0, "skipped_by_saturation": 0, "errors": 0,
-                  "enriched_orgs": 0}
+                  "enriched_orgs": 0, "browser_pages": 0, "queries_used": 0}
         budget = {"fetch": 90, "detail_per_list": 25}
 
         backend = self._backend()
@@ -101,19 +105,69 @@ class SearxngDiscoveryProvider(SearchProvider):
                 key = normalize_company(org.canonical_name)
                 org_name_counts[key] = org_name_counts.get(key, 0) + 1
 
+        # Playwright 真浏览器通道（白名单站点；未安装自动降级）
+        from backend.pipeline.browser_fetcher import BrowserFetcher
+        browser = None
+        with db_scope() as db:
+            prefs = _get_prefs(db)
+            browser_on = getattr(prefs, "browser_fetch_enabled", True)
+        if browser_on and BrowserFetcher().available:
+            browser = BrowserFetcher()
+        try:
+            self._run_queries(queries, backend, browser, fetcher, funnel, intent, level,
+                              today, counts, budget, org_name_counts, registry, on_step,
+                              cancelled, report)
+        finally:
+            if browser:
+                browser.close()
+        counts["queries_used"] = backend.query_count
+
+        # ── 公司核查（口碑 + 法律，榜单 Top-N）──
+        report("enrich")
+        try:
+            from backend.providers.enrichment import enrich_organizations
+            enrich_counts = enrich_organizations(backend, top_n=ENRICH_TOP_N,
+                                                 on_step=on_step, cancelled=cancelled)
+            counts["enriched_orgs"] = enrich_counts.get("orgs", 0)
+            counts["review_docs"] = enrich_counts.get("review_docs", 0)
+            counts["legal_records"] = enrich_counts.get("legal_records", 0)
+        except Exception as exc:
+            counts.setdefault("error_details", []).append(f"公司核查失败: {exc}")
+
+        counts["funnel"] = {"pass_rates": funnel.pass_rates(),
+                            "coverage_estimate": funnel.coverage_estimate(),
+                            "unique_urls": len(funnel._seen_urls)}
+        counts["elapsed_s"] = round(time.perf_counter() - started, 1)
+        return counts
+
+    # ── 查询执行循环 ────────────────────────────────────────
+    def _run_queries(self, queries, backend, browser, fetcher, funnel, intent, level,
+                     today, counts, budget, org_name_counts, registry, on_step,
+                     cancelled, report):
+        consecutive_cooldown = 0
         for pq in queries:
             if cancelled and cancelled():
                 report("dedup", "cancelled")
                 counts["cancelled"] = True
-                return counts
+                return
             if funnel.saturated() and pq.priority >= 2:
                 counts["skipped_by_saturation"] += 1
                 continue
+            if backend.query_count >= _QUERY_BUDGET:
+                counts["skipped_by_saturation"] += 1  # 查询预算用尽，保护上游引擎配额
+                continue
             try:
                 hits = backend.search(pq.query, engines=pq.engines, pageno=pq.pageno)
+                consecutive_cooldown = 0
             except DiscoveryError as exc:
                 counts["errors"] += 1
                 counts.setdefault("error_details", []).append(str(exc))
+                if "限流冷却" in str(exc):
+                    consecutive_cooldown += 1
+                    if consecutive_cooldown >= 3:
+                        # 上游引擎整体限流：提前终止查询阶段，保留已完成结果（核查阶段继续）
+                        counts["aborted_reason"] = "engine_cooldown"
+                        break
                 continue
             by_engine: dict[str, list[str]] = {}
             for hit in hits:
@@ -137,36 +191,29 @@ class SearxngDiscoveryProvider(SearchProvider):
 
                 rule, _entry = registry.triage(hit.url)
 
-                # 列表页一轮展开（仅 httpx 可达的静态列表页；JS 渲染页不硬闯）
-                if rule and rule.page_type == "job_list" and rule.fetcher == "httpx" and budget["fetch"] > 0:
-                    ok, _why = fetcher.can_fetch(hit.url)
-                    if ok:
-                        fr = fetcher.fetch(hit.url)
-                        budget["fetch"] -= 1
-                        if fr.ok:
-                            counts["list_pages"] += 1
-                            for link in extract_job_links(fr.html, hit.url)[:budget["detail_per_list"]]:
-                                if cancelled and cancelled():
-                                    break
-                                self._ingest_detail_page(link, hit.engine, intent, level, today,
-                                                         fetcher, budget, counts, funnel, org_name_counts)
-                            report("extract")
-                            continue
+                # 列表页一轮展开（静态页 httpx；JS 渲染/风控页走 Playwright 白名单）
+                if rule and rule.page_type == "job_list" and budget["fetch"] > 0:
+                    fr = self._fetch_page(hit.url, rule, browser, fetcher, budget, counts)
+                    if fr and fr.ok:
+                        counts["list_pages"] += 1
+                        for link in extract_job_links(fr.html, hit.url)[:budget["detail_per_list"]]:
+                            if cancelled and cancelled():
+                                break
+                            self._ingest_detail_page(link, hit.engine, intent, level, today,
+                                                     browser, fetcher, budget, counts, funnel,
+                                                     org_name_counts)
+                        report("extract")
+                        continue
                     counts["snippet_only"] += 1
                     continue
 
                 # 详情页 / 摘要
                 html, fetched = "", False
                 if rule and rule.page_type == "job_page" and budget["fetch"] > 0:
-                    ok, _why = fetcher.can_fetch(hit.url)
-                    if ok:
-                        fr = fetcher.fetch(hit.url)
-                        budget["fetch"] -= 1
-                        if fr.ok:
-                            html, fetched = fr.html, True
-                            counts["fetched"] += 1
-                        else:
-                            counts["snippet_only"] += 1
+                    fr = self._fetch_page(hit.url, rule, browser, fetcher, budget, counts)
+                    if fr and fr.ok:
+                        html, fetched = fr.html, True
+                        counts["fetched"] += 1
                     else:
                         counts["snippet_only"] += 1
                 else:
@@ -177,23 +224,29 @@ class SearxngDiscoveryProvider(SearchProvider):
                                     counts, funnel, org_name_counts)
             report("extract", "done")
 
-        # ── 公司核查（口碑 + 法律，榜单 Top-N）──
-        report("enrich")
-        try:
-            from backend.providers.enrichment import enrich_organizations
-            enrich_counts = enrich_organizations(backend, top_n=ENRICH_TOP_N,
-                                                 on_step=on_step, cancelled=cancelled)
-            counts["enriched_orgs"] = enrich_counts.get("orgs", 0)
-            counts["review_docs"] = enrich_counts.get("review_docs", 0)
-            counts["legal_records"] = enrich_counts.get("legal_records", 0)
-        except Exception as exc:
-            counts.setdefault("error_details", []).append(f"公司核查失败: {exc}")
+    def _fetch_page(self, url, rule, browser, fetcher, budget, counts):
+        """统一取页：robots 判定 → 按 registry 传输方式（httpx 优先，白名单站点失败时浏览器回退）。"""
+        ok, _why = fetcher.can_fetch(url)
+        if not ok or budget["fetch"] <= 0:
+            return None
+        want_browser = rule.fetcher == "playwright"
+        domain = url.split("/")[2] if "://" in url else ""
+        whitelisted = any(domain == s or domain.endswith("." + s) or s in domain for s in _BROWSER_SITES)
 
-        counts["funnel"] = {"pass_rates": funnel.pass_rates(),
-                            "coverage_estimate": funnel.coverage_estimate(),
-                            "unique_urls": len(funnel._seen_urls)}
-        counts["elapsed_s"] = round(time.perf_counter() - started, 1)
-        return counts
+        fr = None
+        if want_browser and browser and whitelisted:
+            fr = browser.fetch(url)
+            budget["fetch"] -= 1
+            counts["browser_pages"] += 1
+        else:
+            fr = fetcher.fetch(url)
+            budget["fetch"] -= 1
+            # httpx 被风控拦截（login_wall/captcha/重定向）且白名单站点 → 真浏览器回退一次
+            if not fr.ok and browser and whitelisted and budget["fetch"] > 0:
+                fr = browser.fetch(url)
+                budget["fetch"] -= 1
+                counts["browser_pages"] += 1
+        return fr
 
     # ── 记录入库（筛选 → upsert → 筛选字段回填）─────────────
     def _ingest_record(self, url, html, fetched, title, snippet, engine, published_date,
@@ -204,14 +257,20 @@ class SearxngDiscoveryProvider(SearchProvider):
                               counts, funnel, org_name_counts,
                               source_label="搜索发现")
 
-    def _ingest_detail_page(self, url, engine, intent, level, today, fetcher, budget,
+    def _ingest_detail_page(self, url, engine, intent, level, today, browser, fetcher, budget,
                             counts, funnel, org_name_counts):
-        """列表页展开出的详情链接：robots 判定 → 抓取 → 入库。"""
+        """列表页展开出的详情链接：robots 判定 → 抓取（含浏览器回退）→ 入库。"""
         ok, _why = fetcher.can_fetch(url)
         if not ok or budget["fetch"] <= 0:
             return
         fr = fetcher.fetch(url)
         budget["fetch"] -= 1
+        if not fr.ok:
+            domain = url.split("/")[2] if "://" in url else ""
+            if browser and any(s in domain for s in _BROWSER_SITES) and budget["fetch"] > 0:
+                fr = browser.fetch(url)
+                budget["fetch"] -= 1
+                counts["browser_pages"] += 1
         if not fr.ok:
             return
         counts["fetched"] += 1
