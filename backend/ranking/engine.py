@@ -223,8 +223,9 @@ def compute_v(signals: dict | None) -> tuple[float, dict]:
     from backend.signals.service import risk_score_V
     sig = signals or {}
     v, flags = risk_score_V(sig.get("review"), sig.get("legal"))
-    detail = {"note": "无可用公司信号，取中性分"} if "risk_unverified" in flags else (
-             "信号置信度不足，只展示不评分" if "risk_unconfirmed" in flags else "已按口碑/法律信号计分")
+    detail = ({"note": "无可用公司信号，取中性分"} if "risk_unverified" in flags
+              else {"note": "信号置信度不足，只展示不评分"} if "risk_unconfirmed" in flags
+              else {"note": "已按口碑/法律信号计分"})
     return v, {"flags": flags, **detail,
                "review_neg": (sig.get("review") or {}).get("neg_docs"),
                "legal_total": sum((sig.get("legal") or {}).get(k) or 0

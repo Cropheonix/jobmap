@@ -18,6 +18,10 @@ class UserImportProvider(SearchProvider):
         license_notes="数据由用户自行提供并负责来源合法性；仅保存元数据与原链接。",
     )
 
+    def health_check(self) -> dict:
+        return {"name": self.capability.display_name, "status": "available", "ok": True,
+                "note": "被动通道（文件/粘贴导入接口）"}
+
 
 class OfficialSiteProvider(SearchProvider):
     """企业官网招聘页抓取（M2）。"""

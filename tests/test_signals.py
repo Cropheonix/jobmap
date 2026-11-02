@@ -122,3 +122,13 @@ def test_weighted_total_v_zero_disables_risk():
     with_v = weighted_total(subs, {"M": 30, "P": 25, "C": 20, "R": 15, "D": 10, "V": 10})
     without_v = weighted_total(subs, {"M": 30, "P": 25, "C": 20, "R": 15, "D": 10, "V": 0})
     assert without_v > with_v
+
+
+def test_compute_v_detail_always_dict():
+    """compute_v 三分支的 detail 必须是 dict（真实信号写入后曾触发 str 解包崩溃）。"""
+    from backend.ranking.engine import compute_v
+    for sig in [None,
+                {"review": {"incomplete": False, "confidence": 0.5, "neg_ratio": 0.9}},
+                {"review": {"incomplete": False, "confidence": 0.9, "neg_ratio": 0.1, "docs": 3}}]:
+        v, detail = compute_v(sig)
+        assert isinstance(detail, dict), f"detail 不是 dict: {detail!r}"
