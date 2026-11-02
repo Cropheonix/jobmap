@@ -364,6 +364,13 @@
             method: "POST",
             json: { keywords, city: this.filters.city, providers },
           });
+          // 搜索即聚焦：意图解析分离城市词后，把岗位词同步到关键词筛选器
+          try {
+            const ex = await this.api(`/api/filters/expand?text=${encodeURIComponent(this.searchText.trim())}`);
+            const words = Object.keys(ex.groups || {});
+            const kwOnly = words.filter((w) => w !== ex.city).join(" ");
+            if (kwOnly) this.filters.keywordsText = kwOnly;
+          } catch { /* 展开失败时保持原筛选 */ }
           this.pollTask(task.id);
         } catch (e) {
           alert("搜索失败：" + e.message);
