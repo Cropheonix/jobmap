@@ -64,6 +64,29 @@ def session_config(db=Depends(get_db)):
     }
 
 
+@router.get("/filters/expand")
+def expand_keywords(text: str):
+    """关键词同义词展开：按词分组返回（前端对每个查询词做「自身或同族词任一命中」）。"""
+    from backend.filters.intent import parse_intent
+    from backend.filters.relevance import _core
+
+    groups: dict[str, list[str]] = {}
+    for w in text.replace("，", " ").replace(",", " ").replace("、", " ").split():
+        w = w.strip().lower()
+        if not w:
+            continue
+        fam = [w]
+        sub = parse_intent(w)
+        for t in sub.role_terms:
+            if t not in fam:
+                fam.append(t)
+        core = _core(w)
+        if len(core) >= 2 and core not in fam:
+            fam.append(core)
+        groups[w] = fam
+    return {"groups": groups, "city": parse_intent(text).city}
+
+
 @router.get("/providers")
 def providers():
     return {"providers": list_providers()}

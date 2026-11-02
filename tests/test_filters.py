@@ -195,3 +195,30 @@ def test_funnel_coverage_estimate():
     f.register_engine_results("baidu", shared | {f"v{i}" for i in range(10)})
     cov = f.coverage_estimate()  # |A|=20 |B|=20 交集10 → N̂=40，观测30 → 0.75
     assert cov == 0.75
+
+
+# ── S2 复合职称修复（2026-10-31 用户实测「人事主管」仅 4 条暴露）──
+def test_title_synonym_any_hit_strong():
+    """同义词组内任一命中 = 岗位族强命中（此前按 1/4 比例稀释到 0.15 导致误隔离）。"""
+    it = parse_intent("人事主管 成都")
+    for title in ["人事专员", "行政人事经理", "人事行政专员（成都）", "招聘主管"]:
+        _, detail = relevance(it, {"title": title, "description_summary": "", "city": "成都",
+                                   "job_category": "职能/法律/人力", "keywords": []})
+        assert detail["title_hit"] >= 0.8, f"{title}: {detail}"
+
+
+def test_title_suffix_core_match():
+    """职称后缀归一：「招聘专员」（词）应命中「招聘主管」（标题）。"""
+    from backend.filters.relevance import _core
+    assert _core("招聘专员") == "招聘"
+    it = parse_intent("人事主管 成都")
+    _, detail = relevance(it, {"title": "招聘主管", "description_summary": "", "city": "成都",
+                               "job_category": "职能/法律/人力", "keywords": []})
+    assert detail["title_hit"] == 0.8
+
+
+def test_title_unrelated_still_zero():
+    it = parse_intent("人事主管 成都")
+    _, detail = relevance(it, {"title": "混凝土施工员", "description_summary": "", "city": "成都",
+                               "job_category": "建筑/地产", "keywords": []})
+    assert detail["title_hit"] == 0.0

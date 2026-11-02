@@ -76,6 +76,7 @@
         pasteText: "",
         watching: false,
         viewMode: "board",
+        keywordGroups: {},   // 关键词→同族词分组（后端 /api/filters/expand）
         draft: { min: null, max: null, lon: null, lat: null, orgType: "", tileUrl: "", tileAttr: "", tileCrs: "wgs84", extUrl: "", filterLevel: "standard" },
         filters: {
           keywordsText: "", keywordMode: "AND", city: "", district: "",
@@ -102,8 +103,9 @@
         return [...new Set(pool.map((j) => j.district).filter(Boolean))];
       },
       keywordTokens() {
-        return this.filters.keywordsText.trim().toLowerCase()
+        const raw = this.filters.keywordsText.trim().toLowerCase()
           .replace(/[，,、]/g, " ").split(/\s+/).filter(Boolean);
+        return { raw, groups: this.keywordGroups };  // groups: { 词: [同族词...] }
       },
       filteredJobs() {
         const f = this.filters;
@@ -128,12 +130,23 @@
             const days = (Date.now() - new Date(j.published_at)) / 86400000;
             if (days > f.publishedDays) return false;
           }
-          const toks = this.keywordTokens;
-          if (toks.length) {
+          const { raw, groups } = this.keywordTokens;
+          if (raw.length) {
             const blob = [j.title, j.description_summary, j.organization.name,
               (j.keywords || []).join(" "), j.industry, j.job_category, j.district].join(" ").toLowerCase();
-            const hit = (t) => blob.includes(t);
-            if (f.keywordMode === "AND" ? !toks.every(hit) : !toks.some(hit)) return false;
+            // 每个查询词：自身或同族词任一命中（岗位族语义：「人事主管」命中「人事专员/HRBP」）
+            const wordHit = (t) => {
+              const fam = (groups && groups[t]) || [t];
+              return fam.some((e) => {
+                if (!e) return false;
+                // 短英文词（hr 等）要求词边界，避免子串误命中
+                if (/^[a-z]{1,2}$/.test(e)) {
+                  return new RegExp(`\b${e}\b`, "i").test(blob);
+                }
+                return blob.includes(e);
+              });
+            };
+            if (f.keywordMode === "AND" ? !raw.every(wordHit) : !raw.some(wordHit)) return false;
           }
           return true;
         });
@@ -187,6 +200,17 @@
       },
       rankingMode() { this.debouncedSaveWeights(); },
       "filters.city"() { this.filters.district = ""; },
+      "filters.keywordsText"() {
+        clearTimeout(this._kwTimer);
+        this._kwTimer = setTimeout(async () => {
+          const t = this.filters.keywordsText.trim();
+          if (!t) { this.keywordGroups = {}; return; }
+          try {
+            const r = await this.api(`/api/filters/expand?text=${encodeURIComponent(t)}`);
+            this.keywordGroups = r.groups || {};
+          } catch { this.keywordGroups = {}; }
+        }, 400);
+      },
       viewMode() { this.loadJobs(); },
     },
 

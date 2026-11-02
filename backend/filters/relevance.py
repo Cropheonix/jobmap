@@ -5,21 +5,35 @@ from backend.filters.intent import Intent
 
 WEIGHTS = {"title": 0.45, "body": 0.20, "city": 0.20, "category": 0.15}
 
+# 职称后缀：归一后做核心词匹配（「招聘专员」应命中「招聘主管」——同一岗位族）
+_TITLE_SUFFIXES = ("主管", "专员", "经理", "助理", "工程师", "设计师", "分析师", "顾问",
+                   "专员", "主管", "主任", "总监")
+
+
+def _core(word: str) -> str:
+    for s in _TITLE_SUFFIXES:
+        if word.endswith(s) and len(word) > len(s):
+            return word[: -len(s)]
+    return word
+
 
 def _title_hit(intent: Intent, title: str) -> float:
     if not title:
         return 0.0
     t = title.lower()
-    primary = intent.primary_role.lower()
+    primary = (intent.primary_role or "").lower()
     if primary and primary in t:
         return 1.0
     terms = [x for x in intent.role_terms if x]
     if not terms:
         return 0.5  # 无岗位词（纯城市查询）：标题维度取中性
-    hits = sum(1 for x in terms if x in t)
-    if hits == len(terms):
+    # 同义词组是等价类：组内任一词命中（或去职称后缀的核心词命中）= 岗位族强命中
+    if any(x in t for x in terms):
         return 0.8
-    return round(0.6 * hits / len(terms), 3)
+    cores = {_core(x) for x in terms}
+    if any(len(c) >= 2 and c in t for c in cores):
+        return 0.8
+    return 0.0
 
 
 def _body_hit(intent: Intent, *texts: str) -> float:
