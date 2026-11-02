@@ -359,30 +359,36 @@
         this.searching = true;
         try {
           const keywords = this.searchText.trim().replace(/[，,、]/g, " ").split(/\s+/).filter(Boolean);
-          const providers = ["auto"];  // 后端按意图类别智能选源（显式数组可覆盖）
-          const task = await this.api("/api/search/tasks", {
-            method: "POST",
-            json: { keywords, city: this.filters.city, providers },
-          });
-          // 搜索即聚焦：意图解析分离城市词后，把岗位词同步到关键词筛选器
+          // ① 搜索即聚焦（先行）：意图解析分离城市词 → 立即应用筛选（不等任务提交，
+          //    后端建任务含引擎健康探测需数秒，期间榜单应已显示相关岗位）
           try {
             const ex = await this.api(`/api/filters/expand?text=${encodeURIComponent(this.searchText.trim())}`);
             const words = Object.keys(ex.groups || {});
             const kwOnly = words.filter((w) => w !== ex.city).join(" ");
-            if (kwOnly) this.filters.keywordsText = kwOnly;
+            if (kwOnly) {
+              this.keywordGroups = ex.groups || {};
+              this.filters.keywordsText = kwOnly;
+            }
           } catch { /* 展开失败时保持原筛选 */ }
+          // ② 再提交搜索任务（auto：后端按意图类别智能选源）
+          const providers = ["auto"];
+          const task = await this.api("/api/search/tasks", {
+            method: "POST",
+            json: { keywords, city: this.filters.city, providers },
+          });
           this.pollTask(task.id);
         } catch (e) {
           alert("搜索失败：" + e.message);
           this.searching = false;
         }
       },
-      async pollTask(id) {
+      async pollTask(id, tries = 0) {
+        if (tries > 120) { this.searching = false; return; }  // 10 分钟上限，防卡死
         try {
           const t = await this.api(`/api/search/tasks/${id}`);
           this.activeTask = t;
           if (t.state === "running" || t.state === "pending") {
-            setTimeout(() => this.pollTask(id), 700);
+            setTimeout(() => this.pollTask(id, tries + 1), 700);
           } else {
             this.searching = false;
             await Promise.all([this.loadJobs(), this.loadStats(), this.loadTasks()]);

@@ -28,4 +28,18 @@ app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan,
 app.include_router(api_router)
 
 if FRONTEND_DIR.exists():
+    # 根路由动态注入静态资源版本号（破坏浏览器缓存，避免发版后页面跑旧 JS）
+    import time as _time
+
+    _BOOT_TS = str(int(_time.time()))
+
+    from fastapi.responses import FileResponse, HTMLResponse
+
+    @app.get("/", include_in_schema=False)
+    async def index():
+        html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+        html = html.replace("style.css", f"style.css?v={_BOOT_TS}")
+        html = html.replace("app.js", f"app.js?v={_BOOT_TS}")
+        return HTMLResponse(html, headers={"Cache-Control": "no-store, max-age=0"})
+
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
