@@ -194,9 +194,17 @@
       </div>
 
       <div class="job-list" ref="jobList">
-        <div v-if="loading" class="empty">加载中…</div>
+        <div v-if="!searched && viewMode==='board'" class="empty">
+          <div style="font-size:34px;margin-bottom:12px">🔍</div>
+          输入岗位关键词与城市，点击「搜索」开始<br>
+          <span class="dim">示例：后端 成都 · 人事主管 成都 · 设计师 成都 · 银行 成都</span><br>
+          <span class="dim" style="font-size:11px">数据来自国聘/谷德/V2EX/金融招聘网/远程.work 五大垂直站与联网搜索</span>
+        </div>
+        <div v-else-if="loading || searching || (activeTask && activeTask.state==='running')" class="empty">
+          ⟳ 搜索进行中，结果将实时入库…<br><span class="dim">进度见顶部流程条；可先通过左侧筛选调整口径</span>
+        </div>
         <div v-else-if="!rankedJobs.length" class="empty">
-          没有符合条件的职位。<br><span class="dim">试试放宽筛选，或点击右上角「搜索/刷新」导入示例数据。</span>
+          没有符合条件的职位。<br><span class="dim">试试放宽筛选（城市/关键词/类别），或换一组岗位词重新搜索。</span>
         </div>
 
         <article v-for="(job, idx) in rankedJobs" :key="job.id" class="job-card"

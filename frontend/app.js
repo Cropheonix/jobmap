@@ -76,6 +76,7 @@
         pasteText: "",
         watching: false,
         viewMode: "board",
+        searched: false,   // 搜索驱动模式：未搜索不展示榜单
         keywordGroups: {},   // 关键词→同族词分组（后端 /api/filters/expand）
         draft: { min: null, max: null, lon: null, lat: null, orgType: "", tileUrl: "", tileAttr: "", tileCrs: "wgs84", extUrl: "", filterLevel: "standard" },
         filters: {
@@ -211,13 +212,14 @@
           } catch { this.keywordGroups = {}; }
         }, 400);
       },
-      viewMode() { this.loadJobs(); },
+      viewMode() { this.searched = true; this.loadJobs(); },
     },
 
     async mounted() {
       try { this.presets = JSON.parse(localStorage.getItem("jobmap_presets") || "{}"); } catch { this.presets = {}; }
       await this.loadSession();
-      await Promise.all([this.loadPrefs(), this.loadJobs(), this.loadStats(), this.loadProviders()]);
+      await Promise.all([this.loadPrefs(), this.loadStats(), this.loadProviders()]);
+      // 搜索驱动模式：初始不加载职位，待用户首次搜索后展示
       this.$nextTick(() => this.initMap());
       setInterval(() => { if (!this.modal) this.loadStats(); }, 30000);
     },
@@ -359,6 +361,11 @@
         this.searching = true;
         try {
           const keywords = this.searchText.trim().replace(/[，,、]/g, " ").split(/\s+/).filter(Boolean);
+          // ⓪ 重新搜索先清空旧结果与选中态
+          this.searched = true;
+          this.jobs = [];
+          this.selectedId = null;
+          this.expandedId = null;
           // ① 搜索即聚焦（先行）：意图解析分离城市词 → 立即应用筛选（不等任务提交，
           //    后端建任务含引擎健康探测需数秒，期间榜单应已显示相关岗位）
           try {
@@ -382,6 +389,10 @@
           this.searching = false;
         }
       },
+      async refreshAfterTask() {
+        await Promise.all([this.loadJobs(), this.loadStats(), this.loadTasks()]);
+        this.renderMarkers();
+      },
       async pollTask(id, tries = 0) {
         if (tries > 120) { this.searching = false; return; }  // 10 分钟上限，防卡死
         try {
@@ -391,10 +402,13 @@
             setTimeout(() => this.pollTask(id, tries + 1), 700);
           } else {
             this.searching = false;
-            await Promise.all([this.loadJobs(), this.loadStats(), this.loadTasks()]);
-            this.renderMarkers();
+            await this.refreshAfterTask();
           }
-        } catch { this.searching = false; }
+        } catch {
+          // 轮询异常（网络抖动等）也必须刷新数据：任务结果已在库中，不能让榜单停留空态
+          this.searching = false;
+          await this.refreshAfterTask().catch(() => {});
+        }
       },
       async cancelTask() {
         if (!this.activeTask) return;
