@@ -11,6 +11,7 @@ from backend.db.database import db_scope
 from backend.db.models import Job, Organization, UserPreference
 from backend.discovery.base import DiscoveryError
 from backend.discovery.planner import job_queries
+from backend.discovery.browser_search import BrowserSearchBackend
 from backend.discovery.searxng import SearxngBackend
 from backend.filters import intent as intent_mod
 from backend.filters.funnel import FunnelTracker
@@ -145,6 +146,7 @@ class SearxngDiscoveryProvider(SearchProvider):
                      today, counts, budget, org_name_counts, registry, on_step,
                      cancelled, report):
         consecutive_cooldown = 0
+        search_switched = False  # 是否已切换到浏览器搜索
         for pq in queries:
             if cancelled and cancelled():
                 report("dedup", "cancelled")
@@ -160,15 +162,38 @@ class SearxngDiscoveryProvider(SearchProvider):
                 hits = backend.search(pq.query, engines=pq.engines, pageno=pq.pageno)
                 consecutive_cooldown = 0
             except DiscoveryError as exc:
-                counts["errors"] += 1
-                counts.setdefault("error_details", []).append(str(exc))
                 if "限流冷却" in str(exc):
                     consecutive_cooldown += 1
-                    if consecutive_cooldown >= 3:
-                        # 上游引擎整体限流：提前终止查询阶段，保留已完成结果（核查阶段继续）
+                    if consecutive_cooldown >= 1 and not search_switched:
+                        # SearXNG 引擎限流 → 自动切换到浏览器搜索（T2.5 层，无配额限制）
+                        from backend.pipeline.browser_fetcher import BrowserFetcher
+                        if BrowserFetcher().available:
+                            browser = BrowserFetcher()
+                        counts["engine_fallback"] = "browser_search"
+                        consecutive_cooldown = 0
+                        search_switched = True
+                        try:
+                            from backend.discovery.browser_search import BrowserSearchBackend
+                            if not isinstance(backend, BrowserSearchBackend):
+                                backend = BrowserSearchBackend()
+                                hits = backend.search(pq.query, pageno=pq.pageno)
+                                counts["errors"] = counts.get("errors", 0)
+                                # 继续处理这批结果
+                            else:
+                                continue
+                        except Exception:
+                            counts["errors"] = counts.get("errors", 0) + 1
+                            counts.setdefault("error_details", []).append(f"浏览器搜索也失败: 后续查询跳过")
+                            continue
+                    elif consecutive_cooldown >= 3:
                         counts["aborted_reason"] = "engine_cooldown"
                         break
-                continue
+                    else:
+                        continue
+                else:
+                    counts["errors"] = counts.get("errors", 0) + 1
+                    counts.setdefault("error_details", []).append(str(exc))
+                    continue
             by_engine: dict[str, list[str]] = {}
             for hit in hits:
                 by_engine.setdefault(hit.engine or "?", []).append(hit.url)
