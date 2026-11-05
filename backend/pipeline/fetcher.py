@@ -12,7 +12,26 @@ from urllib.parse import urlparse
 
 import httpx
 
-USER_AGENT = "JobMap/1.0 (+local personal research; 127.0.0.1)"
+# 完整浏览器级请求头（2026-11-05 实测：使基础 WAF 站如 archiposition 从 403 → 实内容；
+# 不含登录态/通行证——那些属于 T4 用户自有凭证通道，经 data/credentials.json 本机配置，不入仓库）
+BROWSER_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+}
+# robots 检查使用的 UA 标识（对 robots.txt 诚实；页面请求使用浏览器指纹）
+USER_AGENT = BROWSER_HEADERS["User-Agent"]
 
 _LOGIN_URL_MARKERS = ("login", "signin", "passport.", "account/verify")
 _LOGIN_TEXT_MARKERS = ("登录后查看", "请登录", "扫码登录", "登录查看更多", "立即登录")
@@ -68,13 +87,17 @@ class DomainBackoff:
 
 class Fetcher:
     def __init__(self, min_interval: float = 3.0, gov_interval: float = 5.0,
-                 robots_ttl: float = 7 * 86400, client: httpx.Client | None = None):
+                 robots_ttl: float = 7 * 86400, client: httpx.Client | None = None,
+                 light_domains: set[str] | None = None, light_interval: float = 0.5):
         self.min_interval = min_interval
         self.gov_interval = gov_interval
         self.robots_ttl = robots_ttl
+        # 垂直站（无风控直取层）使用更快的分级间隔，默认 0.5s
+        self.light_domains = light_domains or set()
+        self.light_interval = light_interval
         self._client = client or httpx.Client(
             timeout=httpx.Timeout(10.0, connect=3.0),
-            headers={"User-Agent": USER_AGENT}, follow_redirects=True)
+            headers=dict(BROWSER_HEADERS), follow_redirects=True)
         self._robots: dict[str, tuple[urllib.robotparser.RobotFileParser, float]] = {}
         self._next_allowed: dict[str, float] = {}
         self.backoff = DomainBackoff()
@@ -112,7 +135,13 @@ class Fetcher:
     # ── 抓取 ──────────────────────────────────────────────────
     def fetch(self, url: str) -> FetchResult:
         domain = urlparse(url).netloc
-        interval = self.gov_interval if self._is_gov(domain) else self.min_interval
+        bare = domain[4:] if domain.startswith("www.") else domain
+        if self._is_gov(domain):
+            interval = self.gov_interval
+        elif any(bare == d or bare.endswith("." + d) for d in self.light_domains):
+            interval = self.light_interval  # 垂直站分级间隔（默认 0.5s）
+        else:
+            interval = self.min_interval
         wait = self._next_allowed.get(domain, 0) - time.monotonic()
         if wait > 0:
             time.sleep(min(wait, 30.0))

@@ -98,7 +98,7 @@ class JrzpProvider(SearchProvider):
                             entries.append((url, title.strip(), _CHANNELS[chan][1]))
                 except httpx.HTTPError as exc:
                     counts.setdefault("error_details", []).append(f"频道{chan}: {exc}")
-                _time.sleep(2.0)
+                _time.sleep(0.5)
         # 去重（跨频道同 URL）
         uniq: dict[str, tuple[str, str]] = {}
         for url, title, cat in entries:
@@ -115,7 +115,7 @@ class JrzpProvider(SearchProvider):
                     break
                 summary = title
                 if i < 8:  # 少量详情页增强（日期/摘要）
-                    _time.sleep(2.0)
+                    _time.sleep(0.5)
                     try:
                         resp = c.get(url)
                         if resp.status_code == 200:

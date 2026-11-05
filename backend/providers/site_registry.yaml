@@ -1,8 +1,9 @@
 # 站点注册表（URL 分诊器数据源）
 # pattern 为相对路径正则（re.search）；robots_verdict 为最近实测结论，运行时以实时 robots 为准。
+# min_interval < 1.5 视为轻量垂直站（无风控直取层），Fetcher 自动使用 0.5s 分级间隔。
 domains:
   zhipin.com:
-    robots_verdict: "2026-10-29 实测：通用 UA 允许无参数详情页与 /zhaopin/ 编码列表页；禁带 query 的列表页与 /sem/"
+    robots_verdict: "2026-10-29 实测：通用 UA 允许无参数详情页与 /zhaopin/ 编码列表页；禁带 query 的列表页与 /sem/；JS 挑战与 header 无关（2026-11-05 三组 header 实测均为壳页）"
     min_interval: 2.0
     pages:
       - { pattern: "^/job_detail/[A-Za-z0-9_~]+\\.html$", type: job_page, parser: zhipin_job, fetcher: httpx }
@@ -29,14 +30,14 @@ domains:
   # ── T1 免风控直取层（2026-10-30 POC 实测结论）──
   gooood.cn:
     robots_verdict: "POC 实测：完全开放直取，/category/jobs/ 列表 107KB 实内容、214 招聘链接"
-    min_interval: 3.0
+    min_interval: 0.5
     pages:
       - { pattern: "^/(category/)?jobs/?$", type: job_list, parser: generic, fetcher: httpx }
       - { pattern: "^/category/interview-jobs", type: job_list, parser: generic, fetcher: httpx }
       - { pattern: "^/job/", type: job_page, parser: generic, fetcher: httpx }
   iguopin.com:
     robots_verdict: "POC 实测：SPA 壳页（1KB），需 Playwright 或走 T2 索引"
-    min_interval: 4.0
+    min_interval: 0.5
     pages:
       - { pattern: "^/job", type: job_list, parser: generic, fetcher: playwright }
   job.mohrss.gov.cn:

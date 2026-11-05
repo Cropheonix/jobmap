@@ -71,6 +71,10 @@ class SiteRegistry:
                 return rule, entry
         return None, entry
 
+    def light_domains(self) -> set[str]:
+        """min_interval < 1.5 的轻量垂直站（无风控直取层，0.5s 分级间隔）。"""
+        return {e.domain for e in self._sites.values() if e.min_interval < 1.5}
+
     def all_job_domains(self) -> list[str]:
         out = []
         for entry in self._sites.values():

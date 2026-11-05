@@ -93,7 +93,7 @@ class RemoteWorkProvider(SearchProvider):
             for url, list_title in listing:
                 if cancelled and cancelled():
                     break
-                _time.sleep(2.0)  # 域名限速
+                _time.sleep(0.5)  # 轻量站分级限速
                 try:
                     resp = c.get(url)
                     if resp.status_code != 200:

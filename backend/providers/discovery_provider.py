@@ -90,7 +90,7 @@ class SearxngDiscoveryProvider(SearchProvider):
         intent = intent_mod.parse_intent(f"{keywords} {query.get('city') or ''}".strip(),
                                          intent_mod.load_synonyms())
         registry = SiteRegistry()
-        fetcher = Fetcher()
+        fetcher = Fetcher(light_domains=registry.light_domains())
         funnel = FunnelTracker()
         with db_scope() as db:
             prefs = _get_prefs(db)

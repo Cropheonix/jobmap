@@ -397,6 +397,7 @@
         if (tries > 120) { this.searching = false; return; }  // 10 分钟上限，防卡死
         try {
           const t = await this.api(`/api/search/tasks/${id}`);
+          this.backendLost = 0;
           this.activeTask = t;
           if (t.state === "running" || t.state === "pending") {
             setTimeout(() => this.pollTask(id, tries + 1), 700);
@@ -405,7 +406,15 @@
             await this.refreshAfterTask();
           }
         } catch {
-          // 轮询异常（网络抖动等）也必须刷新数据：任务结果已在库中，不能让榜单停留空态
+          // 轮询异常：区分「后端不可达」与普通网络抖动——连续失败 3 次提示用户检查服务
+          this.backendLost = (this.backendLost || 0) + 1;
+          if (this.backendLost >= 3) {
+            alert("无法连接本地服务（127.0.0.1:8617）。请确认 JobMap 服务已启动（python run.py）。
+本次搜索的结果已保存在本地数据库，重启服务后可查看。");
+            this.searching = false;
+            return;
+          }
+          // 任务结果已在库中，仍尝试刷新数据；榜单停留空态时提示手动刷新
           this.searching = false;
           await this.refreshAfterTask().catch(() => {});
         }
