@@ -390,14 +390,19 @@
           <option value="standard">标准</option>
           <option value="strict">严格（宁精勿多）</option>
         </select>
-        <label class="radio-row" style="margin-top:8px">
-          <input type="checkbox" v-model="draft.browserFetch">
-          <span>真浏览器抓取通道（Playwright，BOSS/知乎等 JS 页与风控页；未安装自动降级）</span>
-        </label>
-        <label class="radio-row">
-          <input type="checkbox" v-model="draft.watchAuto">
-          <span>官网监测自动运行（每 <input type="number" v-model.number="draft.watchDays" min="1" max="30" style="width:52px;padding:2px 6px"> 天检查一次新增/下架）</span>
-        </label>
+        <div class="radio-row" style="display:flex;align-items:center;gap:8px;margin-top:8px">
+          <input type="checkbox" v-model="draft.browserFetch" id="browserFetchCb">
+          <label for="browserFetchCb" style="cursor:pointer;flex:1">真浏览器抓取通道（Playwright，BOSS/知乎等 JS 页与风控页；未安装自动降级）</label>
+        </div>
+        <div class="radio-row" style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" v-model="draft.watchAuto" id="watchAutoCb">
+          <label for="watchAutoCb" style="cursor:pointer">官网监测自动运行</label>
+          <span style="display:flex;align-items:center;gap:4px">
+            <span class="dim">每</span>
+            <input type="number" v-model.number="draft.watchDays" min="1" max="30" style="width:52px;padding:2px 6px" @click.stop>
+            <span class="dim">天</span>
+          </span>
+        </div>
         <p class="hint">修改期望薪资 / 通勤出发点后会按新偏好重算子分（M/P/D 与权重无关）。</p>
         <div class="modal-actions">
           <button class="btn primary" @click="saveSettings">保存并重算</button>

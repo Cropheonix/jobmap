@@ -409,8 +409,7 @@
           // 轮询异常：区分「后端不可达」与普通网络抖动——连续失败 3 次提示用户检查服务
           this.backendLost = (this.backendLost || 0) + 1;
           if (this.backendLost >= 3) {
-            alert("无法连接本地服务（127.0.0.1:8617）。请确认 JobMap 服务已启动（python run.py）。
-本次搜索的结果已保存在本地数据库，重启服务后可查看。");
+            alert("无法连接本地服务（127.0.0.1:8617）。请确认 JobMap 服务已启动（python run.py）。本次搜索的结果已保存在本地数据库，重启服务后可查看。");
             this.searching = false;
             return;
           }
