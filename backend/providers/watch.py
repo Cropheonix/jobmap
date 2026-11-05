@@ -211,9 +211,18 @@ def run_watch(limit: int = 50) -> dict:
 
 # ── T3 域名降级状态（探测一次撞墙即永久走索引线索） ─────────
 def domain_downgraded(domain: str) -> bool:
+    """降级检查（24h TTL 自动过期——间歇性风控站下次任务重试可能通过）。"""
+    from datetime import datetime, timedelta
     with db_scope() as db:
         row = db.get(DomainAccessState, domain)
-        return bool(row and row.state == "downgraded")
+        if not row or row.state != "downgraded":
+            return False
+        detected = row.detected_at if isinstance(row.detected_at, datetime) else None
+        if detected and datetime.utcnow() - detected.replace(tzinfo=None) > timedelta(hours=24):
+            db.delete(row)
+            db.commit()
+            return False
+        return True
 
 
 def mark_domain_downgraded(domain: str, feature: str) -> None:

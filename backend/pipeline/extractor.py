@@ -239,3 +239,56 @@ def build_record(html: str, url: str, hit: dict | None = None) -> dict:
 def _clean_title(title: str) -> str:
     t = re.sub(r"[【】\[\]]", " ", title or "")
     return re.sub(r"\s+", " ", t).strip()[:120]
+
+
+# ── BOSS 直聘详情页 DOM 解析（patchright 隐身通道，2026-11-05 实测数据定位）──
+_ZHIPIN_SEL = {
+    "title": ('.job-banner .name', '.info-primary .name', 'h1'),
+    "salary": ('.job-banner .salary', '.info-primary .salary', '.salary'),
+    "company": ('.company-info .name', '.info-company .name', '.company-text .name'),
+    "addr": ('.location-address',),
+    "desc": ('.job-sec-text', '.job-detail-section'),
+    "tags": ('.job-banner .tag-list li', '.job-tags li'),
+}
+
+
+def _first(html: str, selectors: tuple) -> str:
+    """简单 CSS 类提取（无 bs4 依赖时用正则近似取 class 块文本）。"""
+    for sel in selectors:
+        cls = sel.split(".")[-1].split()[0] if "." in sel else sel
+        m = re.search(rf'class="[^"]*{cls}[^"]*"[^>]*>(.*?)</', html, re.DOTALL)
+        if m:
+            text = re.sub(r"<[^>]+>|\s+", " ", m.group(1)).strip()
+            if text:
+                return text[:300]
+    return ""
+
+
+def parse_zhipin_dom(html: str, fallback_title: str = "") -> dict:
+    """BOSS 详情页 DOM → 规范化记录（patchright 拿到完整页面后调用）。"""
+    title = _first(html, _ZHIPIN_SEL["title"]) or fallback_title
+    # 标题块常带薪资单位尾巴（"c#工程师 元"），剥离
+    for suffix in (" 元", "元/月", "·"):
+        if title.endswith(suffix.split("·")[0]) and suffix != "·":
+            title = title[: -len(suffix)].strip()
+    salary_text = _first(html, _ZHIPIN_SEL["salary"]) or title
+    company = _first(html, _ZHIPIN_SEL["company"])
+    addr = _first(html, _ZHIPIN_SEL["addr"])
+    desc = _first(html, _ZHIPIN_SEL["desc"])
+    fields = extract_by_regex(f"{title} {salary_text} {desc[:200]}")
+    # 地址形如「成都成华区华润大厦(双城四路)」→ 城市/区/详址
+    m = re.match(r"(成都|北京|上海|深圳|广州|杭州|重庆|武汉|西安|南京|苏州|长沙|郑州|天津)([\u4e00-\u9fa5]{2,4}?(?:区|县|市))?(.*)", addr)
+    city, district, address = (m.group(1), m.group(2) or "", m.group(3).strip("()（） ")) if m else (addr[:2], "", addr)
+    return {
+        "title": title[:100],
+        "organization": {"name": company[:60]} if company else {},
+        "city": city,
+        "district": district,
+        "address": address[:200],
+        "salary_min": fields.get("salary_min"),
+        "salary_max": fields.get("salary_max"),
+        "salary_months": fields.get("salary_months"),
+        "experience": fields.get("experience", ""),
+        "description_summary": desc[:600],
+        "extraction_tier": "dom",
+    }

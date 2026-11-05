@@ -240,23 +240,23 @@ class SearxngDiscoveryProvider(SearchProvider):
         whitelisted = any(domain == s or domain.endswith("." + s) or s in domain for s in _BROWSER_SITES)
 
         fr = None
+        if browser and whitelisted:
+            # 白名单站点（BOSS/知乎等）：直接用隐身浏览器（httpx 对这些站永远拿壳页，
+            # 先试只会浪费请求并错误触发 T3 降级标记）
+            fr = browser.fetch(url)
+            budget["fetch"] -= 1
+            counts["browser_pages"] += 1
+            return fr
         if want_browser and browser and whitelisted:
             fr = browser.fetch(url)
             budget["fetch"] -= 1
             counts["browser_pages"] += 1
-        else:
-            fr = fetcher.fetch(url)
-            budget["fetch"] -= 1
-            # T3：WAF 壳页/登录墙/验证码 → 标记域名降级（后续不再探测）
-            if not fr.ok and domain and ({"waf_shell", "login_wall", "captcha"} & set(fr.flags)):
-                mark_domain_downgraded(domain, ",".join(fr.flags) + f";status={fr.status}")
-            # httpx 被风控拦截且白名单站点 → 真浏览器回退一次（回退成功不降级）
-            if not fr.ok and browser and whitelisted and budget["fetch"] > 0:
-                fr = browser.fetch(url)
-                budget["fetch"] -= 1
-                counts["browser_pages"] += 1
-                if fr.ok and domain:
-                    pass  # 浏览器可达，维持可探测状态
+            return fr
+        fr = fetcher.fetch(url)
+        budget["fetch"] -= 1
+        # T3：WAF 壳页/验证码 → 标记域名降级；login_wall 不降级（间歇性站下次可能通过）
+        if not fr.ok and domain and ({"waf_shell", "captcha"} & set(fr.flags)):
+            mark_domain_downgraded(domain, ",".join(fr.flags) + f";status={fr.status}")
         return fr
 
     # ── 记录入库（筛选 → upsert → 筛选字段回填）─────────────
@@ -264,6 +264,15 @@ class SearxngDiscoveryProvider(SearchProvider):
                        intent, level, today, counts, funnel, org_name_counts):
         record = build_record(html, url, {"title": title, "snippet": snippet,
                                           "engine": engine, "published_date": published_date})
+        if html and "zhipin.com" in url:
+            from backend.pipeline.extractor import parse_zhipin_dom
+            dom = parse_zhipin_dom(html, fallback_title=title)
+            for k in ("title", "organization", "city", "district", "address",
+                      "salary_min", "salary_max", "salary_months", "experience",
+                      "description_summary"):
+                if dom.get(k):
+                    record[k] = dom[k]
+            record["extraction_tier"] = "dom"
         self._finalize_record(record, url, fetched, engine, intent, level, today,
                               counts, funnel, org_name_counts,
                               source_label="搜索发现")

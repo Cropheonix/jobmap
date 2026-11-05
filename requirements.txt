@@ -7,3 +7,4 @@ pytest>=8.0
 python-multipart>=0.0.9
 trafilatura>=1.8
 playwright>=1.40
+patchright>=1.52
